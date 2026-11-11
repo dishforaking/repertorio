@@ -1,0 +1,93 @@
+/* DFAK – Repertorio · grafica (tema scuro; la stampa su bianco arriva in T7) */
+@font-face {
+  font-family: 'Grenze Gotisch';
+  src: url('caratteri/grenze-gotisch.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+:root {
+  --oro: #E7C846; --blu: #29367C; --rosso: #B62E27;
+  --fondo: #0b0c10; --carta: #16181f; --linea: #262a35; --testo: #eceff4; --tenue: #9aa3b2;
+  --barra: 64px;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--fondo); color: var(--testo); font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; padding-bottom: calc(var(--barra) + env(safe-area-inset-bottom) + 12px); }
+
+/* Testata fissa: logo, chi sono, avvisi sempre visibili */
+#testa { position: sticky; top: 0; z-index: 10; background: #000; border-bottom: 2px solid var(--oro); padding: 8px 14px 8px; padding-top: calc(8px + env(safe-area-inset-top)); }
+#testa .riga { display: flex; align-items: center; gap: 10px; }
+#testa .scritta { height: 32px; width: auto; max-width: 62%; display: block; }
+#testa .chi { margin-left: auto; text-align: right; line-height: 1.15; }
+#testa .chi b { color: var(--oro); font-size: 15px; letter-spacing: .5px; display: block; }
+#testa .chi small { color: var(--tenue); font-size: 12px; }
+#testa .chi small.salvato { color: #7fd27f; }
+#testa .chi small.errore { color: #ff8a80; }
+.avviso { display: block; margin: 8px 0 0; padding: 9px 12px; border-radius: 8px; font-size: 15px; background: #3a2f0b; border: 1px solid var(--oro); }
+.avviso[hidden] { display: none; }
+.avviso.rosso { background: #3b1110; border-color: var(--rosso); }
+#avvisoVersione { width: 100%; background: var(--blu); color: #fff; font-weight: 600; text-align: left; font-family: inherit; }
+
+main { max-width: 720px; margin: 0 auto; padding: 4px 14px 0; }
+.vista[hidden] { display: none; }
+.gotico, h1 { font-family: 'Grenze Gotisch', serif; font-weight: 600; color: var(--oro); }
+h1 { font-size: 40px; line-height: 1.05; margin: 18px 0 10px; letter-spacing: .3px; }
+h1#saluto { text-align: center; margin-top: 6px; }
+h2 { font-size: 17px; margin: 0 0 6px; color: var(--testo); }
+p { margin: 6px 0; }
+.tenue { color: var(--tenue); }
+.piccolo { font-size: 13px; }
+.centro { text-align: center; }
+.locandina { display: block; width: 100%; max-width: 480px; height: auto; margin: 14px auto 0; }
+.riquadro { background: var(--carta); border: 1px solid var(--linea); border-radius: 12px; padding: 12px 14px; margin: 12px 0; }
+.riquadro.vuoto { text-align: center; padding: 22px 14px; }
+.nota-rete { background: #3a2f0b; border: 1px solid var(--oro); border-radius: 8px; padding: 8px 12px; }
+
+button { font: inherit; font-size: 15px; background: var(--blu); color: #fff; border: 1px solid #4a5aa8; border-radius: 9px; padding: 10px 14px; margin: 4px 6px 4px 0; cursor: pointer; min-height: 44px; }
+button.secondario { background: transparent; border-color: #4a5266; color: var(--testo); }
+button.pericolo { background: #4a1714; border-color: var(--rosso); }
+button.conferma { background: var(--rosso); border-color: #e05a52; font-weight: 600; }
+button:disabled { opacity: .45; }
+.esito { font-size: 14px; background: #0b0c10; border-radius: 8px; padding: 9px 10px; margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
+.esito.errore { border: 1px solid var(--rosso); }
+.esito a { color: var(--oro); }
+
+/* Impostazioni */
+.campo { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--linea); }
+.campo label { flex: 1; min-width: 0; }
+.campo .dalla { display: inline-block; font-size: 12px; color: #c9ced8; background: #2b2f3a; border-radius: 6px; padding: 1px 6px; margin-left: 6px; white-space: nowrap; }
+.campo select { font: inherit; font-size: 15px; background: #0b0c10; color: var(--testo); border: 1px solid #3a4152; border-radius: 8px; padding: 8px; max-width: 46%; }
+.campo input[type=range] { width: 40%; accent-color: var(--oro); }
+.campo output { width: 2.6em; text-align: right; color: var(--tenue); font-variant-numeric: tabular-nums; }
+.interruttore { position: relative; width: 52px; height: 30px; flex: none; }
+.interruttore input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+.interruttore span { position: absolute; inset: 0; background: #3a4152; border-radius: 15px; transition: background .15s; }
+.interruttore span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.interruttore input:checked + span { background: var(--oro); }
+.interruttore input:checked + span::after { transform: translateX(22px); }
+fieldset:disabled .campo { opacity: .55; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+/* Amministrazione */
+ul.membri { list-style: none; padding: 0; margin: 8px 0 0; }
+ul.membri li { padding: 10px 0; border-bottom: 1px solid var(--linea); }
+ul.membri .nome { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+ul.membri .nome b { color: var(--oro); min-width: 3.6em; }
+ul.membri .data { font-size: 12px; color: var(--tenue); }
+ul.membri .questo { font-size: 12px; color: #0b0c10; background: var(--oro); border-radius: 5px; padding: 0 6px; }
+
+.versioni { text-align: center; color: #5d6577; font-size: 12px; margin: 22px 0 6px; }
+
+/* Barra in basso */
+#barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; background: #000; border-top: 1px solid #2a2e3a; padding-bottom: env(safe-area-inset-bottom); }
+#barra button { flex: 1; margin: 0; border: 0; border-radius: 0; background: transparent; color: var(--tenue); min-height: var(--barra); font-size: 14px; padding: 6px 2px; }
+#barra button.attivo { color: var(--oro); box-shadow: inset 0 3px 0 var(--oro); }
+#barra[hidden], #barra button[hidden] { display: none; }
+button { -webkit-tap-highlight-color: transparent; }
+#barra button:focus { outline: none; background: transparent; }
+#barra button:focus-visible { outline: 2px solid var(--oro); outline-offset: -2px; }
+
+@media (min-width: 900px) {
+  h1 { font-size: 46px; }
+  #testa .scritta { height: 40px; }
+}

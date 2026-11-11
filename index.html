@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Dish for a King</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icone/icona-192.png">
+<link rel="preload" href="caratteri/grenze-gotisch.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="stile.css">
+</head>
+<body>
+<header id="testa">
+  <div class="riga">
+    <img class="scritta" src="logo/logo-dish-scuro-scritta.svg" alt="Dish for a King">
+    <div class="chi"><b id="chiSigla"></b><small id="statoSalva"></small></div>
+  </div>
+  <div id="avvisoRete" class="avviso" hidden></div>
+  <button id="avvisoVersione" class="avviso" hidden>Nuova versione: tocca per aggiornare</button>
+  <div id="avvisoCompat" class="avviso rosso" hidden></div>
+  <div id="avvisoCodice" class="avviso rosso" hidden></div>
+</header>
+
+<main>
+  <section id="vInizio" class="vista">
+    <img class="locandina" src="logo/logo-dish-scuro-locandina.svg" alt="Dish for a King">
+    <h1 class="gotico" id="saluto">Benvenuto</h1>
+    <p class="tenue centro" id="ruolo"></p>
+    <div class="riquadro">
+      <h2>In arrivo</h2>
+      <p class="tenue">Qui compariranno i riquadri <b>Da votare</b> e <b>Novità dall'ultima visita</b> (dalla T4).</p>
+    </div>
+    <div class="riquadro" id="riquadroInstalla" hidden>
+      <h2>Installa l'app</h2>
+      <p class="tenue">Così si apre dall'icona, a schermo intero, anche senza rete.</p>
+      <button id="btnInstalla">Installa app</button>
+    </div>
+    <p class="tenue centro piccolo" id="datiDel"></p>
+  </section>
+
+  <section id="vRepertorio" class="vista" hidden>
+    <h1 class="gotico">Repertorio</h1>
+    <div class="riquadro vuoto">
+      <p>Ancora nessun brano.</p>
+      <p class="tenue">I brani, le tonalità, i BPM e gli stati di studio arrivano con la T2.</p>
+    </div>
+  </section>
+
+  <section id="vImpostazioni" class="vista" hidden>
+    <h1 class="gotico">Impostazioni</h1>
+    <p class="tenue">Valgono solo per te e si salvano sul foglio della band. Quelle con l'etichetta grigia avranno effetto dalla tappa indicata.</p>
+    <p class="nota-rete" id="impostazioniSenzaRete" hidden>Senza rete le impostazioni si possono solo guardare.</p>
+    <form id="moduloImpostazioni" onsubmit="return false"></form>
+  </section>
+
+  <section id="vAdmin" class="vista" hidden>
+    <h1 class="gotico">Amministrazione</h1>
+    <div class="riquadro">
+      <h2>Link personali</h2>
+      <p class="tenue">Ogni link contiene un codice. Rigenerare un codice blocca subito il vecchio link.</p>
+      <ul class="membri" id="listaMembri"></ul>
+      <div class="esito" id="esitoAdmin" hidden></div>
+    </div>
+    <div class="riquadro">
+      <h2>Backup</h2>
+      <p class="tenue">Automatico ogni domenica notte (si tengono le ultime 8 copie, cartella APP DFAK → Backup).</p>
+      <button id="btnBackup">Fai un backup ora</button>
+      <div class="esito" id="esitoBackup" hidden></div>
+    </div>
+    <div class="riquadro">
+      <h2>Velocità del motore</h2>
+      <button id="btnMisura">Misura 5 letture</button>
+      <div class="esito" id="esitoMisura" hidden></div>
+    </div>
+    <div class="riquadro">
+      <h2>Questo telefono</h2>
+      <p class="tenue" id="infoTelefono"></p>
+      <button id="btnEsciAdmin" class="secondario">Esci da amministrazione</button>
+    </div>
+  </section>
+
+  <section id="vNessuno" class="vista" hidden>
+    <img class="locandina" src="logo/logo-dish-scuro-locandina.svg" alt="Dish for a King">
+    <div class="riquadro">
+      <h2>Serve il tuo link personale</h2>
+      <p>Apri il link che ti ha mandato Chicco: l'app ti riconosce e lo ricorda.</p>
+    </div>
+  </section>
+
+  <p class="versioni">app v<span id="versioneApp">…</span> · motore v<span id="versioneMotore">…</span></p>
+</main>
+
+<nav id="barra">
+  <button data-vista="vInizio" class="attivo">Inizio</button>
+  <button data-vista="vRepertorio">Repertorio</button>
+  <button data-vista="vImpostazioni">Impostazioni</button>
+  <button data-vista="vAdmin" id="navAdmin" hidden>Admin</button>
+</nav>
+
+<script src="regole.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
