@@ -1,8 +1,8 @@
-/* DFAK – Repertorio · comportamento dell'app e chiamate al motore (T2 Repertorio e scheda brano). */
+/* DFAK – Repertorio · comportamento dell'app e chiamate al motore (T2 Repertorio e scheda brano, T3 Struttura a sezioni). */
 'use strict';
 
-const VERSIONE_INTERFACCIA = 2;   // il motore rifiuta interfacce più vecchie della sua minima
-const MOTORE_MINIMO = 2;          // l'app non scrive su motori più vecchi di questo
+const VERSIONE_INTERFACCIA = 3;   // il motore rifiuta interfacce più vecchie della sua minima
+const MOTORE_MINIMO = 3;          // l'app non scrive su motori più vecchi di questo (T3: salvaStruttura e feel)
 const MOTORE = 'https://script.google.com/macros/s/AKfycbw2kaLgGlfxO5QIcmC1Ax9Ue8z7CBJNdcwpwr9oBsq_P2_MsS5YCIM-9tbfIhgWvWRIuw/exec';
 
 const $ = (id) => document.getElementById(id);
@@ -95,6 +95,10 @@ function aggiornaRete() {
   $('btnNuovo').disabled = fuori;
   document.querySelectorAll('#mioStato button').forEach((b) => { b.disabled = fuori; });
   $('btnElimina').disabled = fuori;
+  // T3: senza rete (o con la sola chiave ADMIN) la struttura si guarda e basta
+  $('campiStruttura').disabled = fuori || !io();
+  $('btnSezione').disabled = fuori || !io() || !branoSalvato();
+  if (ordinatore) ordinatore.option('disabled', fuori || !io());
   if (!fuori) { av.hidden = true; return; }
   const copia = stato.dati;
   av.textContent = (navigator.onLine ? 'Senza rete (motore non raggiungibile)' : 'Senza rete') + ' — dati del ' + (copia ? ora(copia.quando) : '(nessuna copia)') + '. Si può consultare, non modificare.';
@@ -290,7 +294,8 @@ function nuovoIdBrano() {
 }
 function schedaOccupata() {
   const attivo = document.activeElement;
-  return !$('vBrano').hidden && (!!timerBrano || salvataggioInCorso || (attivo && $('moduloBrano').contains(attivo) && attivo.tagName !== 'BUTTON'));
+  return !$('vBrano').hidden && (!!timerBrano || salvataggioInCorso || (attivo && $('moduloBrano').contains(attivo) && attivo.tagName !== 'BUTTON')
+    || !!timerStruttura || strutturaInCorso || editorOccupato());
 }
 function moduloImpostazioniOccupato() { return !!timerSalva; }
 
@@ -306,12 +311,13 @@ function riempiScelte() {
   s.value = prima;
   if (!$('bRiferimento').options.length) Regole.RIFERIMENTI.forEach((x) => $('bRiferimento').append(new Option(x, x)));
   if (!$('bMetro').options.length) Regole.METRI.forEach((x) => $('bMetro').append(new Option(x, x)));
+  if (!$('bFeel').options.length) Regole.FEEL.forEach((x) => $('bFeel').append(new Option(x, x)));
 }
 
 function apriBrano(id, daRidisegno) {
   const b = id ? brani().find((x) => x.id === id) : null;
   if (id && !b) return vai('vRepertorio');
-  branoAperto = b ? Object.assign({}, b) : { id: nuovoIdBrano(), versione: 0, titolo: '', artista: '', tonalitaOriginale: '', scostamento: 0, accordatura: 'Mib', bpm: '', riferimento: 'Quarti', metro: '4/4', durataManuale: '', note: '', stato: 'In prova' };
+  branoAperto = b ? Object.assign({}, b) : { id: nuovoIdBrano(), versione: 0, titolo: '', artista: '', tonalitaOriginale: '', scostamento: 0, accordatura: 'Mib', bpm: '', riferimento: 'Quarti', metro: '4/4', feel: 'Dritto', durataManuale: '', note: '', stato: 'In prova' };
   memoria.set('branoAperto', branoAperto.id);
   riempiScelte();
   $('bTitolo').value = branoAperto.titolo;
@@ -325,6 +331,7 @@ function apriBrano(id, daRidisegno) {
   $('bBpm').value = branoAperto.bpm;
   $('bRiferimento').value = branoAperto.riferimento;
   $('bMetro').value = branoAperto.metro;
+  $('bFeel').value = branoAperto.feel || 'Dritto';
   $('bDurata').value = Regole.scriviDurata(branoAperto.durataManuale);
   $('bNote').value = branoAperto.note;
   $('rifSuggerito').hidden = true;
@@ -333,6 +340,7 @@ function apriBrano(id, daRidisegno) {
   mostra('esitoBrano', '');
   aggiornaAnteprima();
   disegnaStatiBrano();
+  caricaStruttura(branoAperto.id);
   $('riquadroElimina').hidden = !stato.admin || !b;
   delete $('btnElimina').dataset.conferma; $('btnElimina').textContent = 'Elimina brano'; $('btnElimina').className = 'pericolo';
   if (!daRidisegno || $('vBrano').hidden) vai('vBrano'); else aggiornaRete();
@@ -364,7 +372,7 @@ function leggiModuloBrano() {
     tonalitaOriginale: $('bTonalita').value, scostamento: branoAperto.scostamento,
     accordatura: sel === '__altra' ? $('bAccAltra').value : sel,
     bpm: $('bBpm').value === '' ? '' : Number($('bBpm').value),
-    riferimento: $('bRiferimento').value, metro: $('bMetro').value,
+    riferimento: $('bRiferimento').value, metro: $('bMetro').value, feel: $('bFeel').value || 'Dritto',
     durataManuale: (() => { const d = durataDaTastiera($('bDurata').value); return d === null ? $('bDurata').value : d; })(), note: $('bNote').value
   };
 }
@@ -378,9 +386,10 @@ function aggiornaAnteprima() {
   $('bScost').textContent = formatoScostamento(d.scostamento);
   const b = branoAperto;
   $('bInfo').textContent = b.versione ? (b.stato || 'In prova') + ' · ultima modifica ' + (b.modificatoDa || '') + ' il ' + dataOra(b.modificatoIl) : 'Brano nuovo: si salva appena scrivi il titolo.';
+  aggiornaDurate();
 }
 
-const CAMPO_ID = { titolo: 'bTitolo', artista: 'bArtista', tonalitaOriginale: 'bTonalita', scostamento: 'bScost', accordatura: 'bAccordatura', bpm: 'bBpm', riferimento: 'bRiferimento', metro: 'bMetro', durataManuale: 'bDurata', note: 'bNote' };
+const CAMPO_ID = { titolo: 'bTitolo', artista: 'bArtista', tonalitaOriginale: 'bTonalita', scostamento: 'bScost', accordatura: 'bAccordatura', bpm: 'bBpm', riferimento: 'bRiferimento', metro: 'bMetro', feel: 'bFeel', durataManuale: 'bDurata', note: 'bNote' };
 
 function cambioBrano() {
   aggiornaAnteprima();
@@ -399,7 +408,7 @@ function cambioBrano() {
   statoSalva('salvataggio…');
   timerBrano = setTimeout(() => { timerBrano = null; salvaBrano(0); }, 700);
 }
-function nomeCampo(c) { return { titolo: 'titolo', tonalitaOriginale: 'tonalità', scostamento: 'scostamento', bpm: 'BPM (30–300, intero)', durataManuale: 'durata (m:ss)', riferimento: 'riferimento', metro: 'metro' }[c] || c; }
+function nomeCampo(c) { return { titolo: 'titolo', tonalitaOriginale: 'tonalità', scostamento: 'scostamento', bpm: 'BPM (30–300, intero)', durataManuale: 'durata (m:ss)', riferimento: 'riferimento', metro: 'metro', feel: 'feel' }[c] || c; }
 
 /** Salvataggio in sottofondo, uno alla volta: se nel frattempo cambia qualcosa, si risalva subito dopo. */
 async function salvaBrano(tentativo) {
@@ -422,6 +431,7 @@ async function salvaBrano(tentativo) {
       Object.assign(branoAperto, { versione: j.brano.versione, modificatoDa: j.brano.modificatoDa, modificatoIl: j.brano.modificatoIl, stato: j.brano.stato });
       $('riquadroElimina').hidden = !stato.admin;
       aggiornaAnteprima();
+      if (struttura.brano === id && !struttura.sezioni.length) disegnaStruttura();   // ora si possono aggiungere le sezioni
     }
     salvaCopia();
     disegnaRepertorio();
@@ -443,7 +453,7 @@ async function salvaBrano(tentativo) {
 }
 
 ['bTitolo', 'bArtista', 'bBpm', 'bDurata', 'bNote', 'bAccAltra'].forEach((x) => $(x).addEventListener('input', cambioBrano));
-['bTonalita', 'bRiferimento'].forEach((x) => $(x).addEventListener('change', cambioBrano));
+['bTonalita', 'bRiferimento', 'bFeel'].forEach((x) => $(x).addEventListener('change', cambioBrano));
 // tastiera con il separatore (virgola o punto) invece del tastierino senza due punti
 $('bDurata').inputMode = 'decimal';
 $('bDurata').addEventListener('blur', () => { const d = durataDaTastiera($('bDurata').value); if (d) $('bDurata').value = d; });
@@ -490,6 +500,7 @@ $('btnTap').addEventListener('pointerdown', (ev) => {
 
 $('btnIndietro').addEventListener('click', () => {
   if (timerBrano) { clearTimeout(timerBrano); timerBrano = null; salvaBrano(0); }   // salva subito ciò che era in attesa
+  if (timerStruttura) { clearTimeout(timerStruttura); timerStruttura = null; salvaStruttura(0); }
   vai('vRepertorio');
 });
 $('btnNuovo').addEventListener('click', () => { if (puoScrivere('esitoBrano')) apriBrano(null); else mostra('repVuoto', 'Serve la rete per aggiungere un brano.', true); });
@@ -559,6 +570,7 @@ $('btnElimina').addEventListener('click', () => chiediConferma($('btnElimina'), 
     const r = risposta();
     r.brani = r.brani.filter((b) => b.id !== id);
     r.statiStudio = r.statiStudio.filter((s) => s.brano !== id);
+    r.sezioni = (r.sezioni || []).filter((s) => s.brano !== id);
     salvaCopia(); memoria.del('branoAperto'); branoAperto = null;
     vai('vRepertorio'); disegnaRepertorio();
     mostra('avvisoCodice', '');
@@ -566,6 +578,364 @@ $('btnElimina').addEventListener('click', () => chiediConferma($('btnElimina'), 
     mostra('repVuoto', '"' + titolo + '" eliminato (resta traccia nello Storico).');
   } catch (e) { mostra('esitoBrano', 'Non eliminato: ' + e.message, true); }
 }));
+
+
+/* ---------- T3 · Struttura a sezioni ----------
+ * Copia di lavoro della struttura del brano aperto; si salva TUTTA insieme (salvaStruttura) 1,5 s dopo
+ * l'ultima modifica, con l'elenco delle sezioni che il telefono conosceva: il motore fa l'unione con
+ * quello che nel frattempo hanno fatto gli altri. */
+const sezioniTutte = () => { const r = risposta(); return (r && r.sezioni) || []; };
+let struttura = { brano: null, sezioni: [], conosciute: [], aperta: null };
+let timerStruttura = null, strutturaInCorso = false, strutturaDiNuovo = false, ordinatore = null;
+const ATTESA_STRUTTURA_MS = 1500;
+const CAMPI_SEZIONE = ['id', 'tipo', 'nome', 'ripetizioni', 'battute', 'bpm', 'metro', 'riferimento', 'feel', 'nota', 'chiSuona'];
+function copiaSezione(x) {
+  const o = {};
+  CAMPI_SEZIONE.concat(['versione', 'modificatoDa', 'modificatoIl']).forEach((k) => { o[k] = x[k] === undefined || x[k] === null ? '' : x[k]; });
+  return o;
+}
+function perMotore(x) { const o = {}; CAMPI_SEZIONE.forEach((k) => { o[k] = x[k] === undefined || x[k] === null ? '' : x[k]; }); return o; }
+function branoSalvato() { return !!(branoAperto && brani().some((b) => b.id === branoAperto.id)); }
+function editorOccupato() {
+  const a = document.activeElement;
+  return !!(a && $('listaSezioni').contains(a) && a.tagName !== 'BUTTON');
+}
+/** Il brano come è scritto adesso nella scheda (serve alla durata calcolata), con la durata manuale in secondi. */
+function branoPerDurata() {
+  const d = leggiModuloBrano();
+  const sec = Regole.leggiDurata(d.durataManuale);
+  d.durataManuale = sec === null ? '' : sec;
+  return d;
+}
+
+function caricaStruttura(branoId) {
+  const lista = sezioniTutte().filter((x) => x.brano === branoId).sort((a, b) => a.ordine - b.ordine).map(copiaSezione);
+  const aperta = struttura.brano === branoId && lista.some((x) => x.id === struttura.aperta) ? struttura.aperta : null;
+  struttura = { brano: branoId, sezioni: lista, conosciute: lista.map((x) => ({ id: x.id, versione: x.versione })), aperta };
+  mostra('esitoStruttura', '');
+  disegnaStruttura();
+}
+
+/** Totale in testa alla struttura e confronto con la durata manuale (decisione T3 n. 4: vince la manuale). */
+function aggiornaDurate() {
+  if (!branoAperto) return;
+  const b = branoPerDurata();
+  const d = Regole.durataStruttura(b, struttura.brano === branoAperto.id ? struttura.sezioni : []);
+  const t = $('strDurata'); t.textContent = ''; t.className = '';
+  if (d.secondi !== null) t.append('totale ', el('b', '', Regole.scriviDurata(d.secondi)), ' calcolato');
+  else if (d.sezioni) {
+    t.className = 'manca';
+    t.textContent = d.senzaBattute.length ? 'durata non calcolata: mancano le battute in ' + d.senzaBattute.join(', ')
+      : 'durata non calcolata: manca il BPM (del brano o della sezione) in ' + d.senzaBpm.join(', ');
+  }
+  const c = $('bDurataConfronto'); c.textContent = '';
+  if (d.secondi !== null && b.durataManuale) {
+    c.append('calcolata ', el('b', '', Regole.scriviDurata(d.secondi)), ' · manuale ', el('b', '', Regole.scriviDurata(b.durataManuale)),
+      ' (' + Regole.scriviDifferenza(b.durataManuale - d.secondi) + '). Vale la manuale.');
+  } else if (d.secondi !== null) c.append('Calcolata dalla struttura: ', el('b', '', Regole.scriviDurata(d.secondi)), '. Vale questa finché non scrivi la manuale.');
+  c.hidden = !c.textContent;
+}
+
+function testoCambi(x) {
+  const p = [];
+  if (x.bpm !== '' && x.bpm !== null && x.bpm !== undefined) p.push('♩ ' + x.bpm);
+  if (x.metro) p.push(x.metro);
+  if (x.riferimento) p.push(x.riferimento.toLowerCase());
+  if (x.feel) p.push(x.feel.toLowerCase());
+  return p.join(' · ');
+}
+
+/** Riga compatta: nome, ×ripetizioni, battute (se l'impostazione è accesa), cambi, eccezioni di chi suona, nota. */
+function riempiCorpo(corpo, x, nome) {
+  const me = io(), imp = impostazioni();
+  corpo.textContent = '';
+  const r1 = el('span', 'r1'); r1.append(el('b', 'nome', nome));
+  if (Number(x.ripetizioni) > 1) r1.append(el('span', 'rip', '×' + x.ripetizioni));
+  if (imp.battute && x.battute !== '' && x.battute !== null && x.battute !== undefined) r1.append(el('span', 'batt', x.battute + ' batt.'));
+  corpo.append(r1);
+  const cambi = testoCambi(x);
+  if (cambi) corpo.append(el('span', 'cambi', cambi));
+  const g = Regole.gruppiChiSuona(x.chiSuona);
+  if (g.tacet.length || g.stella.length) {
+    const chi = el('span', 'chi');
+    // "Evidenzia solo la mia parte": le mie eccezioni in rilievo, quelle degli altri attenuate
+    const segno = (sigla, tipo) => el('span', 'eccez ' + tipo + (imp.evidenziaSoloMe ? (me && me.sigla === sigla ? ' mia' : ' altri') : ''), (tipo === 'tacet' ? 'tacet ' : '★ ') + sigla);
+    g.tacet.forEach((sg) => chi.append(segno(sg, 'tacet')));
+    g.stella.forEach((sg) => chi.append(segno(sg, 'stella')));
+    corpo.append(chi);
+  }
+  if (x.nota) corpo.append(el('span', 'nota', x.nota));
+}
+function aggiornaRigheCompatte() {
+  const nomi = Regole.nomiSezioni(struttura.sezioni);
+  struttura.sezioni.forEach((x, i) => {
+    const c = document.querySelector('#listaSezioni li[data-id="' + x.id + '"] button.corpo');
+    if (c) riempiCorpo(c, x, nomi[i]);
+  });
+}
+
+function disegnaStruttura() {
+  const ul = $('listaSezioni'); ul.textContent = '';
+  const nomi = Regole.nomiSezioni(struttura.sezioni), n = struttura.sezioni.length;
+  struttura.sezioni.forEach((x, i) => {
+    const li = el('li', 'sezione' + (struttura.aperta === x.id ? ' aperta' : '')); li.dataset.id = x.id;
+    const riga = el('div', 'riga-sez');
+    const maniglia = el('span', 'maniglia', '≡'); maniglia.setAttribute('aria-label', 'trascina per spostare');
+    const corpo = el('button', 'corpo'); corpo.type = 'button';
+    riempiCorpo(corpo, x, nomi[i]);
+    corpo.addEventListener('click', () => { struttura.aperta = struttura.aperta === x.id ? null : x.id; disegnaStruttura(); });
+    const frecce = el('span', 'frecce');
+    const su = el('button', 'su', '▲'); su.type = 'button'; su.setAttribute('aria-label', 'sposta su'); su.disabled = i === 0;
+    const giu = el('button', 'giu', '▼'); giu.type = 'button'; giu.setAttribute('aria-label', 'sposta giù'); giu.disabled = i === n - 1;
+    su.addEventListener('click', () => spostaSezione(i, -1));
+    giu.addEventListener('click', () => spostaSezione(i, 1));
+    frecce.append(su, giu);
+    riga.append(maniglia, corpo, frecce); li.append(riga);
+    if (struttura.aperta === x.id) li.append(editorSezione(x));
+    ul.append(li);
+  });
+  const salvato = branoSalvato(), v = $('strVuota');
+  v.textContent = !salvato ? 'Prima scrivi il titolo: poi puoi aggiungere le sezioni.'
+    : !n ? (io() ? 'Ancora nessuna sezione: tocca "+ Sezione" (Intro, Strofa, Rit…).' : 'Nessuna sezione.') : '';
+  v.hidden = !v.textContent;
+  preparaOrdinatore();
+  aggiornaDurate();
+  aggiornaRete();
+}
+
+/** Ridisegna la struttura e rimette il cursore nel campo dove si stava scrivendo (stessa sezione, stessa posizione). */
+function disegnaStrutturaTenendoIlCursore() {
+  const a = document.activeElement, li = a && a.closest ? a.closest('li.sezione') : null;
+  const dove = li && a.dataset.campo ? { id: li.dataset.id, campo: a.dataset.campo, pos: (() => { try { return a.selectionStart; } catch (e) { return null; } })() } : null;
+  disegnaStruttura();
+  if (!dove) return;
+  const x = document.querySelector('#listaSezioni li[data-id="' + dove.id + '"] [data-campo="' + dove.campo + '"]');
+  if (!x) return;
+  x.focus();
+  try { if (dove.pos !== null && dove.pos !== undefined) x.setSelectionRange(dove.pos, dove.pos); } catch (e) { /* campi numerici: niente posizione */ }
+}
+
+/** Trascinamento con la maniglia ≡ (stessa impostazione collaudata nella T0 sullo Xiaomi). Senza libreria restano le frecce. */
+function preparaOrdinatore() {
+  if (!window.Sortable || ordinatore) return;
+  ordinatore = Sortable.create($('listaSezioni'), {
+    handle: '.maniglia', animation: 150, ghostClass: 'fantasma', draggable: 'li.sezione',
+    onEnd: (e) => {
+      if (e.oldIndex === e.newIndex) return;
+      const [x] = struttura.sezioni.splice(e.oldIndex, 1);
+      struttura.sezioni.splice(e.newIndex, 0, x);
+      disegnaStruttura();
+      cambioStruttura();
+    }
+  });
+}
+
+function editorSezione(x) {
+  const box = el('div', 'editor');
+  const b = branoPerDurata();
+  const colonna = (etichetta, nodo, classe) => {
+    const c = el('div', 'campo-col' + (classe ? ' ' + classe : ''));
+    const l = el('label', 'etichetta', etichetta);
+    nodo.id = 'sez-' + nodo.dataset.campo; l.htmlFor = nodo.id;
+    c.append(l, nodo); return c;
+  };
+  const scelta = (campo, opzioni, valore) => {
+    const s = document.createElement('select'); s.dataset.campo = campo;
+    opzioni.forEach(([v, t]) => s.append(new Option(t, v)));
+    s.value = valore === undefined || valore === null ? '' : String(valore); return s;
+  };
+  const casella = (campo, attributi, valore) => {
+    const s = document.createElement('input'); s.dataset.campo = campo; Object.assign(s, attributi);
+    s.value = valore === undefined || valore === null ? '' : valore; return s;
+  };
+  const r1 = el('div', 'riga-campi');
+  r1.append(colonna('Tipo', scelta('tipo', Regole.TIPI_SEZIONE.map((t) => [t, t]), x.tipo)),
+    colonna('Nome (facoltativo)', casella('nome', { maxLength: 40, placeholder: 'es. Strofa lenta' }, x.nome)));
+  const r2 = el('div', 'riga-campi');
+  const rip = el('div', 'campo-col'); rip.append(el('span', 'etichetta', 'Ripetizioni'));
+  const passi = el('div', 'passi');
+  const meno = el('button', 'secondario', '−'); meno.type = 'button'; meno.setAttribute('aria-label', 'una ripetizione in meno');
+  const quante = el('output', '', '×' + (x.ripetizioni || 1));
+  const piu = el('button', 'secondario', '+'); piu.type = 'button'; piu.setAttribute('aria-label', 'una ripetizione in più');
+  const cambiaRip = (d) => {
+    const nuovo = Math.max(1, Math.min(Regole.MAX_RIPETIZIONI, (Number(x.ripetizioni) || 1) + d));
+    if (nuovo === Number(x.ripetizioni)) return;
+    x.ripetizioni = nuovo; quante.textContent = '×' + nuovo;
+    aggiornaRigheCompatte(); cambioStruttura();
+  };
+  meno.addEventListener('click', () => cambiaRip(-1)); piu.addEventListener('click', () => cambiaRip(1));
+  passi.append(meno, quante, piu); rip.append(passi);
+  r2.append(colonna('Battute', casella('battute', { type: 'number', inputMode: 'numeric', min: 1, max: Regole.MAX_BATTUTE, step: 1, placeholder: '—' }, x.battute), 'stretto'), rip);
+  const nota = colonna('Nota', casella('nota', { maxLength: 200, placeholder: 'es. stop sul 4, attacca GTR1' }, x.nota));
+  // Chi suona: un pulsante per membro; al tocco suona → tacet → ★ → suona
+  const cs = el('div', 'chisuona'), mappa = Regole.leggiChiSuona(x.chiSuona) || {};
+  Regole.SIGLE.forEach((sg) => {
+    const parte = mappa[sg] || '';
+    const bt = el('button', (parte === 'tacet' ? 'tacet' : parte === '★' ? 'stella' : '') + (io() && io().sigla === sg ? ' mio' : ''));
+    bt.type = 'button'; bt.dataset.sigla = sg;
+    bt.append(document.createTextNode(sg), el('small', '', parte || 'suona'));
+    bt.addEventListener('click', () => {
+      mappa[sg] = Regole.parteSuccessiva(mappa[sg]);
+      x.chiSuona = Regole.scriviChiSuona(mappa);
+      disegnaStruttura(); cambioStruttura();
+    });
+    cs.append(bt);
+  });
+  // Cambi della sezione (decisione T3 n. 3): vuoto = come il brano
+  const cambi = document.createElement('details'); cambi.className = 'cambi';
+  cambi.open = !!testoCambi(x);
+  cambi.append(el('summary', '', 'Cambi in questa sezione (BPM, metro, feel)'));
+  const r3 = el('div', 'riga-campi');
+  r3.append(colonna('BPM', casella('bpm', { type: 'number', inputMode: 'numeric', min: Regole.BPM_MIN, max: Regole.BPM_MAX, step: 1, placeholder: b.bpm ? String(b.bpm) : '—' }, x.bpm), 'stretto'),
+    colonna('Metro', scelta('metro', [['', '= brano (' + b.metro + ')']].concat(Regole.METRI.map((m) => [m, m])), x.metro)),
+    colonna('Riferimento', scelta('riferimento', [['', '= brano (' + b.riferimento.toLowerCase() + ')']].concat(Regole.RIFERIMENTI.map((m) => [m, m])), x.riferimento)),
+    colonna('Feel', scelta('feel', [['', '= brano (' + String(b.feel || 'Dritto').toLowerCase() + ')']].concat(Regole.FEEL.map((m) => [m, m])), x.feel)));
+  cambi.append(r3);
+  const azioni = el('div', 'azioni');
+  const dup = el('button', 'secondario', 'Duplica'); dup.type = 'button';
+  dup.addEventListener('click', () => duplicaSezione(x.id));
+  const togli = el('button', 'pericolo', 'Elimina sezione'); togli.type = 'button'; togli.dataset.testo = 'Elimina sezione';
+  togli.addEventListener('click', () => chiediConferma(togli, () => eliminaSezione(x.id)));
+  const chiudi = el('button', 'secondario', 'Chiudi'); chiudi.type = 'button';
+  chiudi.addEventListener('click', () => { struttura.aperta = null; disegnaStruttura(); });
+  azioni.append(dup, togli, chiudi);
+  box.append(r1, r2, nota, el('span', 'etichetta', 'Chi suona — tocca: tacet, poi ★, poi di nuovo suona'), cs, cambi, azioni);
+  // Scrivendo si aggiorna la copia di lavoro e la riga compatta, senza ridisegnare il riquadro sotto le dita
+  box.querySelectorAll('[data-campo]').forEach((campo) => {
+    campo.addEventListener(campo.tagName === 'SELECT' ? 'change' : 'input', () => {
+      const c = campo.dataset.campo;
+      if (c === 'metro') {
+        // come nella scheda: il riferimento si adatta solo se era ancora quello suggerito per il metro di prima
+        const bb = branoPerDurata(), prima = x.metro || bb.metro, dopo = campo.value || bb.metro;
+        if ((x.riferimento || bb.riferimento) === Regole.riferimentoSuggerito(prima)) {
+          const sugg = Regole.riferimentoSuggerito(dopo);
+          x.riferimento = sugg === bb.riferimento ? '' : sugg;
+          box.querySelector('[data-campo="riferimento"]').value = x.riferimento;
+        }
+      }
+      x[c] = campo.value;
+      aggiornaRigheCompatte();
+      cambioStruttura();
+    });
+  });
+  return box;
+}
+
+function spostaSezione(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= struttura.sezioni.length) return;
+  const t = struttura.sezioni[i]; struttura.sezioni[i] = struttura.sezioni[j]; struttura.sezioni[j] = t;
+  disegnaStruttura(); cambioStruttura();
+}
+function duplicaSezione(id) {
+  const i = struttura.sezioni.findIndex((x) => x.id === id);
+  if (i < 0) return;
+  if (struttura.sezioni.length >= Regole.MAX_SEZIONI) return mostra('esitoStruttura', 'Massimo ' + Regole.MAX_SEZIONI + ' sezioni per brano.', true);
+  const c = copiaSezione(struttura.sezioni[i]);
+  c.id = nuovoIdBrano(); c.versione = 0; c.modificatoDa = ''; c.modificatoIl = '';
+  struttura.sezioni.splice(i + 1, 0, c);
+  struttura.aperta = c.id;
+  disegnaStruttura(); cambioStruttura();
+}
+function eliminaSezione(id) {
+  struttura.sezioni = struttura.sezioni.filter((x) => x.id !== id);
+  if (struttura.aperta === id) struttura.aperta = null;
+  disegnaStruttura(); cambioStruttura();
+}
+$('btnSezione').addEventListener('click', () => {
+  if (!puoScrivere('esitoStruttura') || !branoSalvato()) return;
+  if (struttura.sezioni.length >= Regole.MAX_SEZIONI) return mostra('esitoStruttura', 'Massimo ' + Regole.MAX_SEZIONI + ' sezioni per brano.', true);
+  const nuova = { id: nuovoIdBrano(), tipo: struttura.sezioni.length ? 'Strofa' : 'Intro', nome: '', ripetizioni: 1, battute: '', bpm: '', metro: '', riferimento: '', feel: '', nota: '', chiSuona: '', versione: 0, modificatoDa: '', modificatoIl: '' };
+  struttura.sezioni.push(nuova);
+  struttura.aperta = nuova.id;
+  disegnaStruttura(); cambioStruttura();
+  const li = document.querySelector('#listaSezioni li[data-id="' + nuova.id + '"]');
+  if (li && li.scrollIntoView) li.scrollIntoView({ block: 'nearest' });
+});
+
+function nomeCampoSezione(c) {
+  return { tipo: 'tipo', ripetizioni: 'ripetizioni (1–16)', battute: 'battute (1–999, intero)', bpm: 'BPM (30–300, intero)', metro: 'metro', riferimento: 'riferimento', feel: 'feel', chiSuona: 'chi suona', troppe: 'massimo 40 sezioni', id: 'identificativo', doppione: 'sezione doppia' }[c] || c;
+}
+
+function cambioStruttura() {
+  clearTimeout(timerStruttura); timerStruttura = null;
+  aggiornaDurate();
+  if (!io() || !struttura.brano) return;
+  if (!puoScrivere('esitoStruttura')) { statoSalva('serve la rete', 'errore'); return; }
+  const n = Regole.normalizzaStruttura(struttura.sezioni.map(perMotore));
+  document.querySelectorAll('#listaSezioni .invalido').forEach((x) => x.classList.remove('invalido'));
+  if (n.errori.length) {
+    const nomi = Regole.nomiSezioni(struttura.sezioni);
+    n.errori.forEach((e) => {
+      const sez = struttura.sezioni[e.indice];
+      if (sez) e.campi.forEach((c) => { const x = document.querySelector('#listaSezioni li[data-id="' + sez.id + '"] [data-campo="' + c + '"]'); if (x) x.classList.add('invalido'); });
+    });
+    statoSalva('da correggere', 'errore');
+    mostra('esitoStruttura', 'Da correggere: ' + n.errori.map((e) => (e.indice >= 0 ? nomi[e.indice] + ' — ' : '') + e.campi.map(nomeCampoSezione).join(', ')).join('; ') + '. Finché non è a posto la struttura non si salva.', true);
+    return;
+  }
+  mostra('esitoStruttura', '');
+  statoSalva('salvataggio…');
+  timerStruttura = setTimeout(() => { timerStruttura = null; salvaStruttura(0); }, ATTESA_STRUTTURA_MS);
+}
+
+function testoAvviso(a) {
+  const parti = [];
+  if (a.tenute) parti.push(a.tenute === 1 ? 'ho tenuto in fondo 1 sezione che avevano aggiunto' : 'ho tenuto in fondo ' + a.tenute + ' sezioni che avevano aggiunto');
+  if (a.cambiateDaAltri) parti.push(a.cambiateDaAltri === 1 ? '1 sezione era stata modificata: ora vale la tua versione' : a.cambiateDaAltri + ' sezioni erano state modificate: ora vale la tua versione');
+  if (a.ricreate) parti.push(a.ricreate === 1 ? '1 sezione che era stata tolta è tornata, perché c’era ancora nella tua' : a.ricreate + ' sezioni che erano state tolte sono tornate, perché c’erano ancora nella tua');
+  return 'Attenzione: ' + (a.modificatoDa || 'un altro') + ' ha modificato la struttura' + (a.modificatoIl ? ' il ' + dataOra(a.modificatoIl) : '') + '. ' + parti.join('; ') + '. Controllate insieme.';
+}
+
+/** Salvataggio in sottofondo, uno alla volta; se nel frattempo cambia qualcosa, si risalva subito dopo. */
+async function salvaStruttura(tentativo) {
+  if (strutturaInCorso) { strutturaDiNuovo = true; return; }
+  if (!struttura.brano) return;
+  const lista = struttura.sezioni.map(perMotore);
+  if (Regole.normalizzaStruttura(lista).errori.length) return;
+  strutturaInCorso = true;
+  const branoId = struttura.brano, conosciute = struttura.conosciute;
+  const note = {}; lista.forEach((x) => { note[x.id] = true; }); conosciute.forEach((x) => { note[x.id] = true; });
+  try {
+    const j = await chiama('salvaStruttura', { brano: branoId, sezioni: lista, conosciute });
+    if (!j.ok) {
+      statoSalva('non salvato', 'errore');
+      mostra('esitoStruttura', 'Struttura non salvata: ' + (j.sezioni ? j.sezioni.map((e) => e.campi.map(nomeCampoSezione).join(', ')).join('; ') : j.errore), true);
+      return;
+    }
+    const r = risposta();
+    r.sezioni = (r.sezioni || []).filter((x) => x.brano !== branoId).concat(j.sezioni);
+    salvaCopia();
+    if (struttura.brano === branoId) {
+      struttura.conosciute = j.sezioni.map((x) => ({ id: x.id, versione: x.versione }));
+      // (non ovvio) si aggiornano gli oggetti esistenti invece di sostituirli: il riquadro aperto continua a
+      // scrivere sulla stessa sezione. Le sezioni che il motore ha tenuto perché aggiunte da altri si accodano.
+      const locali = {}; struttura.sezioni.forEach((x) => { locali[x.id] = x; });
+      let accodate = 0;
+      j.sezioni.forEach((x) => {
+        if (locali[x.id]) Object.assign(locali[x.id], { versione: x.versione, modificatoDa: x.modificatoDa, modificatoIl: x.modificatoIl });
+        else if (!note[x.id]) { struttura.sezioni.push(copiaSezione(x)); accodate++; }
+      });
+      if (!editorOccupato()) disegnaStruttura();
+      else if (accodate) disegnaStrutturaTenendoIlCursore();   // le sezioni degli altri si vedono subito
+      else aggiornaDurate();
+    }
+    statoSalva('salvato ✓', 'salvato');
+    if (j.avviso) mostra('esitoStruttura', testoAvviso(j.avviso), true);
+  } catch (e) {
+    if (e instanceof ErroreRete && tentativo < 2 && navigator.onLine) {
+      statoSalva('riprovo…');
+      strutturaInCorso = false;
+      setTimeout(() => salvaStruttura(tentativo + 1), tentativo ? 5000 : 2000);
+      return;
+    }
+    statoSalva('non salvato: serve la rete', 'errore');
+    mostra('esitoStruttura', 'Struttura non salvata: ' + e.message + '. Le modifiche restano su questa schermata finché non la lasci.', true);
+  } finally {
+    strutturaInCorso = false;
+    if (strutturaDiNuovo) { strutturaDiNuovo = false; salvaStruttura(0); }
+  }
+}
 
 /* ---------- Impostazioni personali (salvate sul foglio) ---------- */
 let impostazioniSalvate = null;

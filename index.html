@@ -109,12 +109,17 @@
               <label class="etichetta" for="bMetro">Metro</label>
               <select id="bMetro"></select>
             </div>
+            <div class="campo-col stretto">
+              <label class="etichetta" for="bFeel">Feel</label>
+              <select id="bFeel"></select>
+            </div>
           </div>
           <p class="suggerito" id="rifSuggerito" hidden></p>
           <button type="button" id="btnTap" class="tap">TAP</button>
           <p class="tenue piccolo centro" id="tapInfo">Batti a tempo sull'unità di riferimento (almeno 4 tocchi).</p>
-          <label class="etichetta" for="bDurata">Durata (m:ss) <small class="tenue">— quella calcolata dalla struttura arriva in T3</small></label>
+          <label class="etichetta" for="bDurata">Durata manuale (m:ss) <small class="tenue">— se è scritta vale questa</small></label>
           <input id="bDurata" class="stretto" inputmode="numeric" placeholder="es. 3:45" maxlength="5">
+          <p class="confronto" id="bDurataConfronto" hidden></p>
         </div>
 
         <div class="riquadro">
@@ -123,6 +128,16 @@
         </div>
       </fieldset>
     </form>
+
+    <div class="riquadro" id="riquadroStruttura">
+      <div class="testa-struttura"><h2>Struttura</h2><span id="strDurata"></span></div>
+      <fieldset id="campiStruttura">
+        <ul class="sezioni" id="listaSezioni"></ul>
+        <p class="tenue piccolo" id="strVuota" hidden></p>
+        <button type="button" id="btnSezione">+ Sezione</button>
+      </fieldset>
+      <div class="esito" id="esitoStruttura" hidden></div>
+    </div>
 
     <div class="riquadro" id="riquadroStato">
       <h2>Il mio stato</h2>
@@ -190,6 +205,7 @@
   <button data-vista="vAdmin" id="navAdmin" hidden>Admin</button>
 </nav>
 
+<script src="lib/Sortable.min.js"></script>
 <script src="regole.js"></script>
 <script src="app.js"></script>
 </body>

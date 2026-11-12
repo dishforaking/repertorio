@@ -4,10 +4,12 @@
  * T1: membri, codici, impostazioni personali.
  * T2: tonalità (forme, scostamento, suono reale, notazione), accordature, controlli del brano,
  *     durata manuale, tap tempo, stati di studio, filtri.
+ * T3: struttura a sezioni (tipi, nomi numerati, chi suona, cambi per sezione), durata calcolata,
+ *     metro 2/2 e riferimento Minime, feel Dritto / Shuffle.
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 2;
-  var TAPPA = 2;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
+  var VERSIONE_REGOLE = 3;
+  var TAPPA = 3;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
   var MEMBRI = [
@@ -167,12 +169,17 @@ var Regole = (function () {
   }
 
   /* ================= Brano ================= */
-  var METRI = ['4/4', '3/4', '2/4', '6/8', '12/8'];
-  var RIFERIMENTI = ['Quarti', 'Ottavi', 'Quarti puntati'];
+  var METRI = ['4/4', '3/4', '2/4', '2/2', '6/8', '12/8'];
+  var RIFERIMENTI = ['Quarti', 'Ottavi', 'Quarti puntati', 'Minime'];
+  /* T3 (decisione 2): il feel non cambia la durata; servirà al metronomo della T6 (ottavi terzinati). */
+  var FEEL = ['Dritto', 'Shuffle'];
   var BPM_MIN = 30, BPM_MAX = 300;
   var STATI_BRANO = ['Proposto', 'In prova', 'Definitivo', 'Archivio'];
-  /** Con 6/8 e 12/8 si suggeriscono i quarti puntati (solo un suggerimento). */
-  function riferimentoSuggerito(metro) { return metro === '6/8' || metro === '12/8' ? 'Quarti puntati' : 'Quarti'; }
+  /** Con 6/8 e 12/8 si suggeriscono i quarti puntati, con 2/2 le minime (solo un suggerimento). */
+  function riferimentoSuggerito(metro) {
+    if (metro === '6/8' || metro === '12/8') return 'Quarti puntati';
+    return metro === '2/2' ? 'Minime' : 'Quarti';
+  }
 
   /** "3:45" → 225 secondi; "" → ""; non valido → null. */
   function leggiDurata(t) {
@@ -223,6 +230,8 @@ var Regole = (function () {
     var s = leggiDurata(d.durataManuale);
     if (s === null) errori.push('durataManuale'); else v.durataManuale = s;
     v.note = testo(d.note, 2000);
+    v.feel = d.feel ? String(d.feel) : 'Dritto';
+    if (FEEL.indexOf(v.feel) < 0) errori.push('feel');
     return { valori: v, errori: errori };
   }
 
@@ -276,6 +285,171 @@ var Regole = (function () {
     }).sort(function (a, b) { return String(a.titolo).localeCompare(String(b.titolo), 'it', { sensitivity: 'base' }); });
   }
 
+  /* ================= T3 · Struttura a sezioni ================= */
+  var TIPI_SEZIONE = ['Intro', 'Strofa', 'Pre-rit', 'Rit', 'Bridge', 'Solo', 'Stacco', 'Re-Intro', 'Finale'];
+  var MAX_SEZIONI = 40, MAX_RIPETIZIONI = 16, MAX_BATTUTE = 999;
+  /* Chi suona: di base suonano tutti; si scrive solo l'eccezione (tacet = non suona, ★ = protagonista). */
+  var PARTI = ['tacet', '★'];
+  /* Lunghezza di una battuta misurata in quarti, per metro. */
+  var QUARTI_PER_BATTUTA = { '4/4': 4, '3/4': 3, '2/4': 2, '2/2': 4, '6/8': 3, '12/8': 6 };
+  /* Quanti quarti vale un battito del BPM, per riferimento (BPM in quarti = BPM × questo numero). */
+  var QUARTI_PER_BATTITO = { 'Quarti': 1, 'Ottavi': 0.5, 'Quarti puntati': 1.5, 'Minime': 2 };
+
+  function vuoto(v) { return v === '' || v === undefined || v === null; }
+  /** Intero facoltativo tra min e max: "" se vuoto, il numero se valido, null se non valido. */
+  function interoFacoltativo(v, min, max) {
+    if (vuoto(v)) return '';
+    var n = Number(v);
+    return isNaN(n) || Math.round(n) !== n || n < min || n > max ? null : n;
+  }
+
+  /** "BASS:tacet;GTR1:★" → { BASS: 'tacet', GTR1: '★' }; "" → {}; null se non valido. */
+  function leggiChiSuona(s) {
+    var o = {};
+    s = String(vuoto(s) ? '' : s).trim();
+    if (!s) return o;
+    var parti = s.split(';');
+    for (var i = 0; i < parti.length; i++) {
+      if (!parti[i].trim()) continue;
+      var kv = parti[i].split(':');
+      if (kv.length !== 2) return null;
+      var sigla = kv[0].trim(), cosa = kv[1].trim();
+      if (SIGLE.indexOf(sigla) < 0 || PARTI.indexOf(cosa) < 0 || o[sigla]) return null;
+      o[sigla] = cosa;
+    }
+    return o;
+  }
+  /** Scrittura per il foglio: solo le eccezioni, sempre nell'ordine VOX GTR1 GTR2 BASS DRUM. */
+  function scriviChiSuona(o) {
+    var out = [];
+    for (var i = 0; i < SIGLE.length; i++) if (o && PARTI.indexOf(o[SIGLE[i]]) >= 0) out.push(SIGLE[i] + ':' + o[SIGLE[i]]);
+    return out.join(';');
+  }
+  /** Al tocco del pallino: suona → tacet → ★ → suona. */
+  function parteSuccessiva(cosa) { return !cosa ? 'tacet' : cosa === 'tacet' ? '★' : ''; }
+  /** Eccezioni raggruppate per la vista: { tacet: ['BASS'], stella: ['GTR1'] } nell'ordine delle sigle. */
+  function gruppiChiSuona(s) {
+    var o = (typeof s === 'string' ? leggiChiSuona(s) : s) || {}, g = { tacet: [], stella: [] };
+    for (var i = 0; i < SIGLE.length; i++) {
+      if (o[SIGLE[i]] === 'tacet') g.tacet.push(SIGLE[i]);
+      if (o[SIGLE[i]] === '★') g.stella.push(SIGLE[i]);
+    }
+    return g;
+  }
+
+  /**
+   * Controlla e ripulisce una sezione. Restituisce { valori, errori }.
+   * Vuoto in bpm / metro / riferimento / feel = "come il brano". Il campo "testo" (T5) non passa da qui.
+   */
+  function normalizzaSezione(d) {
+    d = d || {};
+    var v = {}, errori = [];
+    v.id = d.id;
+    if (!idValido(d.id)) errori.push('id');
+    v.tipo = String(vuoto(d.tipo) ? '' : d.tipo);
+    if (TIPI_SEZIONE.indexOf(v.tipo) < 0) errori.push('tipo');
+    v.nome = testo(d.nome, 40);
+    var rip = interoFacoltativo(d.ripetizioni, 1, MAX_RIPETIZIONI);
+    if (rip === null) errori.push('ripetizioni'); else v.ripetizioni = rip === '' ? 1 : rip;
+    var bt = interoFacoltativo(d.battute, 1, MAX_BATTUTE);
+    if (bt === null) errori.push('battute'); else v.battute = bt;
+    var bp = interoFacoltativo(d.bpm, BPM_MIN, BPM_MAX);
+    if (bp === null) errori.push('bpm'); else v.bpm = bp;
+    v.metro = vuoto(d.metro) ? '' : String(d.metro);
+    if (v.metro && METRI.indexOf(v.metro) < 0) errori.push('metro');
+    v.riferimento = vuoto(d.riferimento) ? '' : String(d.riferimento);
+    if (v.riferimento && RIFERIMENTI.indexOf(v.riferimento) < 0) errori.push('riferimento');
+    v.feel = vuoto(d.feel) ? '' : String(d.feel);
+    if (v.feel && FEEL.indexOf(v.feel) < 0) errori.push('feel');
+    v.nota = testo(d.nota, 200);
+    var cs = leggiChiSuona(d.chiSuona);
+    if (cs === null) errori.push('chiSuona'); else v.chiSuona = scriviChiSuona(cs);
+    return { valori: v, errori: errori };
+  }
+
+  /**
+   * Struttura intera di un brano, nell'ordine in cui arriva. Restituisce { valori, errori }:
+   * valori con "ordine" da 1 a n; errori = [{ indice, campi }] (indice -1 = la struttura in sé).
+   */
+  function normalizzaStruttura(lista) {
+    if (!lista || typeof lista.length !== 'number' || typeof lista === 'string') return { valori: [], errori: [{ indice: -1, campi: ['sezioni'] }] };
+    if (lista.length > MAX_SEZIONI) return { valori: [], errori: [{ indice: -1, campi: ['troppe'] }] };
+    var valori = [], errori = [], visti = {};
+    for (var i = 0; i < lista.length; i++) {
+      var n = normalizzaSezione(lista[i]);
+      if (n.valori.id && visti[n.valori.id]) n.errori.push('doppione');
+      visti[n.valori.id] = true;
+      if (n.errori.length) errori.push({ indice: i, campi: n.errori });
+      n.valori.ordine = i + 1;
+      valori.push(n.valori);
+    }
+    return { valori: valori, errori: errori };
+  }
+
+  /** Nomi da mostrare: il nome libero, altrimenti il tipo, numerato se ce n'è più di uno (Strofa 1, Strofa 2). */
+  function nomiSezioni(sezioni) {
+    var totali = {}, visti = {}, out = [];
+    sezioni = sezioni || [];
+    for (var i = 0; i < sezioni.length; i++) if (!testo(sezioni[i].nome, 40)) totali[sezioni[i].tipo] = (totali[sezioni[i].tipo] || 0) + 1;
+    for (var j = 0; j < sezioni.length; j++) {
+      var s = sezioni[j], nome = testo(s.nome, 40);
+      if (nome) { out.push(nome); continue; }
+      visti[s.tipo] = (visti[s.tipo] || 0) + 1;
+      out.push(totali[s.tipo] > 1 ? s.tipo + ' ' + visti[s.tipo] : String(s.tipo));
+    }
+    return out;
+  }
+
+  /** BPM, metro, riferimento e feel che valgono per la sezione: i suoi cambi, altrimenti quelli del brano. */
+  function tempoSezione(sez, brano) {
+    sez = sez || {}; brano = brano || {};
+    return {
+      bpm: !vuoto(sez.bpm) ? Number(sez.bpm) : (vuoto(brano.bpm) ? '' : Number(brano.bpm)),
+      metro: sez.metro || brano.metro || '4/4',
+      riferimento: sez.riferimento || brano.riferimento || 'Quarti',
+      feel: sez.feel || brano.feel || 'Dritto'
+    };
+  }
+  /** Secondi di una sezione (NON arrotondati), oppure null se mancano le battute o il BPM. */
+  function secondiSezione(sez, brano) {
+    var t = tempoSezione(sez, brano);
+    var bt = Number(sez.battute);
+    if (vuoto(sez.battute) || !(bt > 0) || !(t.bpm > 0)) return null;
+    var rip = Number(sez.ripetizioni) || 1;
+    return bt * rip * QUARTI_PER_BATTUTA[t.metro] * 60 / (t.bpm * QUARTI_PER_BATTITO[t.riferimento]);
+  }
+  /**
+   * Durata calcolata dalla struttura: { secondi, senzaBattute, senzaBpm, sezioni }.
+   * secondi = null se non ci sono sezioni o se ad almeno una mancano le battute o il BPM (nomi negli elenchi).
+   * (non ovvio) Si arrotonda al secondo solo il totale: arrotondando ogni sezione, 20 sezioni
+   * accumulerebbero fino a ±10 s di errore.
+   */
+  function durataStruttura(brano, sezioni) {
+    sezioni = sezioni || [];
+    var nomi = nomiSezioni(sezioni), tot = 0, senzaBattute = [], senzaBpm = [];
+    for (var i = 0; i < sezioni.length; i++) {
+      var s = sezioni[i];
+      if (vuoto(s.battute)) { senzaBattute.push(nomi[i]); continue; }
+      var x = secondiSezione(s, brano);
+      if (x === null) senzaBpm.push(nomi[i]); else tot += x;
+    }
+    var calcolabile = sezioni.length > 0 && !senzaBattute.length && !senzaBpm.length;
+    return { secondi: calcolabile ? Math.round(tot) : null, senzaBattute: senzaBattute, senzaBpm: senzaBpm, sezioni: sezioni.length };
+  }
+  /** Decisione T3 n. 4: vale la durata manuale quando è scritta, altrimenti la calcolata. */
+  function durataEffettiva(brano, sezioni) {
+    var man = brano && !vuoto(brano.durataManuale) ? Number(brano.durataManuale) : 0;
+    if (man > 0) return { secondi: man, fonte: 'manuale' };
+    var c = durataStruttura(brano, sezioni).secondi;
+    return c === null ? { secondi: null, fonte: '' } : { secondi: c, fonte: 'calcolata' };
+  }
+  /** Differenza in secondi già scritta: "−4 s", "+3:04", "uguali". */
+  function scriviDifferenza(sec) {
+    if (!sec) return 'uguali';
+    var a = Math.abs(sec);
+    return (sec > 0 ? '+' : '−') + (a < 60 ? a + ' s' : scriviDurata(a));
+  }
+
   return {
     VERSIONE_REGOLE: VERSIONE_REGOLE,
     TAPPA: TAPPA,
@@ -303,6 +477,7 @@ var Regole = (function () {
     tonalitaBrano: tonalitaBrano,
     METRI: METRI,
     RIFERIMENTI: RIFERIMENTI,
+    FEEL: FEEL,
     BPM_MIN: BPM_MIN,
     BPM_MAX: BPM_MAX,
     STATI_BRANO: STATI_BRANO,
@@ -319,6 +494,25 @@ var Regole = (function () {
     statoDi: statoDi,
     prontoPerTutti: prontoPerTutti,
     FILTRI: FILTRI,
-    filtra: filtra
+    filtra: filtra,
+    TIPI_SEZIONE: TIPI_SEZIONE,
+    MAX_SEZIONI: MAX_SEZIONI,
+    MAX_RIPETIZIONI: MAX_RIPETIZIONI,
+    MAX_BATTUTE: MAX_BATTUTE,
+    PARTI: PARTI,
+    QUARTI_PER_BATTUTA: QUARTI_PER_BATTUTA,
+    QUARTI_PER_BATTITO: QUARTI_PER_BATTITO,
+    leggiChiSuona: leggiChiSuona,
+    scriviChiSuona: scriviChiSuona,
+    parteSuccessiva: parteSuccessiva,
+    gruppiChiSuona: gruppiChiSuona,
+    normalizzaSezione: normalizzaSezione,
+    normalizzaStruttura: normalizzaStruttura,
+    nomiSezioni: nomiSezioni,
+    tempoSezione: tempoSezione,
+    secondiSezione: secondiSezione,
+    durataStruttura: durataStruttura,
+    durataEffettiva: durataEffettiva,
+    scriviDifferenza: scriviDifferenza
   };
 })();
