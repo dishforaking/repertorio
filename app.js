@@ -339,6 +339,21 @@ function apriBrano(id, daRidisegno) {
   if (!b) $('bTitolo').focus();
 }
 
+/**
+ * Durata scritta come viene dalla tastiera del telefono (correzione T2 dopo il collaudo: il tastierino
+ * numerico dello Xiaomi non ha i due punti). Accetta 4:08, 4.08, 4,08 e solo cifre (408 → 4:08, 1205 → 12:05).
+ * Restituisce "m:ss" pronto per le regole, "" se vuoto, null se non si capisce.
+ */
+function durataDaTastiera(t) {
+  t = String(t || '').trim();
+  if (!t) return '';
+  let m = /^(\d{1,2})[:.,](\d{2})$/.exec(t);
+  if (!m) { const c = /^(\d{3,4})$/.exec(t); if (c) m = [t, t.slice(0, -2), t.slice(-2)]; }
+  if (!m) return null;
+  const testo = Number(m[1]) + ':' + m[2];
+  return Regole.leggiDurata(testo) ? testo : null;
+}
+
 function formatoScostamento(n) { n = Number(n) || 0; return n > 0 ? '+' + n : n < 0 ? '−' + (-n) : '0'; }
 
 function leggiModuloBrano() {
@@ -350,7 +365,7 @@ function leggiModuloBrano() {
     accordatura: sel === '__altra' ? $('bAccAltra').value : sel,
     bpm: $('bBpm').value === '' ? '' : Number($('bBpm').value),
     riferimento: $('bRiferimento').value, metro: $('bMetro').value,
-    durataManuale: $('bDurata').value, note: $('bNote').value
+    durataManuale: (() => { const d = durataDaTastiera($('bDurata').value); return d === null ? $('bDurata').value : d; })(), note: $('bNote').value
   };
 }
 
@@ -429,6 +444,9 @@ async function salvaBrano(tentativo) {
 
 ['bTitolo', 'bArtista', 'bBpm', 'bDurata', 'bNote', 'bAccAltra'].forEach((x) => $(x).addEventListener('input', cambioBrano));
 ['bTonalita', 'bRiferimento'].forEach((x) => $(x).addEventListener('change', cambioBrano));
+// tastiera con il separatore (virgola o punto) invece del tastierino senza due punti
+$('bDurata').inputMode = 'decimal';
+$('bDurata').addEventListener('blur', () => { const d = durataDaTastiera($('bDurata').value); if (d) $('bDurata').value = d; });
 $('bAccordatura').addEventListener('change', () => {
   const altra = $('bAccordatura').value === '__altra';
   $('bAccAltra').hidden = !altra;
