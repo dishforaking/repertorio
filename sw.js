@@ -1,7 +1,7 @@
 /* DFAK – Repertorio: memoria offline e numero di versione dell'app.
  * Per pubblicare una nuova versione si cambia VERSIONE (e si caricano i file cambiati).
  * Tutto ciò che si salva usa il prefisso "dfak-" e vale solo per la cartella /repertorio/. */
-const VERSIONE = '1';
+const VERSIONE = '2';
 const PREFISSO = 'dfak-repertorio-';
 const CACHE = PREFISSO + 'v' + VERSIONE;
 const FILE = [

@@ -41,9 +41,101 @@
 
   <section id="vRepertorio" class="vista" hidden>
     <h1 class="gotico">Repertorio</h1>
-    <div class="riquadro vuoto">
-      <p>Ancora nessun brano.</p>
-      <p class="tenue">I brani, le tonalità, i BPM e gli stati di studio arrivano con la T2.</p>
+    <div class="strumenti">
+      <div class="segmenti" id="sceltaModo">
+        <button type="button" data-modo="elenco" class="attivo">Elenco</button>
+        <button type="button" data-modo="matrice">Chi è pronto</button>
+      </div>
+      <button type="button" id="btnNuovo">+ Nuovo brano</button>
+    </div>
+    <div class="filtri" id="filtri"></div>
+    <ul class="brani" id="listaBrani"></ul>
+    <div id="matrice" hidden></div>
+    <div class="riquadro vuoto" id="repVuoto" hidden></div>
+  </section>
+
+  <section id="vBrano" class="vista" hidden>
+    <button type="button" id="btnIndietro" class="secondario indietro">◀ Repertorio</button>
+    <form id="moduloBrano" onsubmit="return false" autocomplete="off">
+      <fieldset id="campiBrano">
+        <div class="riquadro">
+          <label class="etichetta" for="bTitolo">Titolo</label>
+          <input id="bTitolo" class="grande" maxlength="120" placeholder="Titolo del brano">
+          <label class="etichetta" for="bArtista">Artista</label>
+          <input id="bArtista" maxlength="120" placeholder="Artista originale">
+        </div>
+
+        <div class="riquadro">
+          <h2>Tonalità <small class="tenue">(come la suonate: forme sulla chitarra)</small></h2>
+          <div class="riga-campi">
+            <div class="campo-col">
+              <label class="etichetta" for="bTonalita">Originale (dal disco)</label>
+              <select id="bTonalita"></select>
+            </div>
+            <div class="campo-col">
+              <span class="etichetta">Scostamento</span>
+              <div class="passi">
+                <button type="button" class="secondario" id="bMeno" aria-label="un semitono giù">−</button>
+                <output id="bScost">0</output>
+                <button type="button" class="secondario" id="bPiu" aria-label="un semitono su">+</button>
+              </div>
+            </div>
+          </div>
+          <div class="risultato" id="bTonRisultato"><b id="bTonTesto">—</b><span id="bTonDettaglio"></span><span id="bTonReale" class="reale"></span></div>
+          <label class="etichetta" for="bAccordatura">Accordatura</label>
+          <div class="riga-campi">
+            <select id="bAccordatura">
+              <option value="">—</option>
+              <option value="Mib">Mib</option>
+              <option value="Drop Mib">Drop Mib (Re♭ La♭ Re♭ Sol♭ Si♭ Mi♭)</option>
+              <option value="__altra">Altra…</option>
+            </select>
+            <input id="bAccAltra" maxlength="40" placeholder="Quale accordatura" hidden>
+          </div>
+        </div>
+
+        <div class="riquadro">
+          <h2>Tempo</h2>
+          <div class="riga-campi">
+            <div class="campo-col stretto">
+              <label class="etichetta" for="bBpm">BPM</label>
+              <input id="bBpm" type="number" inputmode="numeric" min="30" max="300" step="1" placeholder="—">
+            </div>
+            <div class="campo-col">
+              <label class="etichetta" for="bRiferimento">Riferimento</label>
+              <select id="bRiferimento"></select>
+            </div>
+            <div class="campo-col stretto">
+              <label class="etichetta" for="bMetro">Metro</label>
+              <select id="bMetro"></select>
+            </div>
+          </div>
+          <p class="suggerito" id="rifSuggerito" hidden></p>
+          <button type="button" id="btnTap" class="tap">TAP</button>
+          <p class="tenue piccolo centro" id="tapInfo">Batti a tempo sull'unità di riferimento (almeno 4 tocchi).</p>
+          <label class="etichetta" for="bDurata">Durata (m:ss) <small class="tenue">— quella calcolata dalla struttura arriva in T3</small></label>
+          <input id="bDurata" class="stretto" inputmode="numeric" placeholder="es. 3:45" maxlength="5">
+        </div>
+
+        <div class="riquadro">
+          <label class="etichetta" for="bNote">Note</label>
+          <textarea id="bNote" rows="3" maxlength="2000" placeholder="Attacchi, finali, chi conta…"></textarea>
+        </div>
+      </fieldset>
+    </form>
+
+    <div class="riquadro" id="riquadroStato">
+      <h2>Il mio stato</h2>
+      <div class="stati" id="mioStato"></div>
+      <h2 class="spazio">La band</h2>
+      <ul class="statiBand" id="statiBand"></ul>
+    </div>
+    <p class="tenue piccolo" id="bInfo"></p>
+    <div class="esito" id="esitoBrano" hidden></div>
+    <div class="riquadro" id="riquadroElimina" hidden>
+      <h2>Amministrazione</h2>
+      <p class="tenue">Solo per correggere un errore (fino alla T4, poi si toglie un brano con la proposta).</p>
+      <button type="button" id="btnElimina" class="pericolo" data-testo="Elimina brano">Elimina brano</button>
     </div>
   </section>
 
