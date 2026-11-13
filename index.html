@@ -20,6 +20,7 @@
   <button id="avvisoVersione" class="avviso" hidden>Nuova versione: tocca per aggiornare</button>
   <div id="avvisoCompat" class="avviso rosso" hidden></div>
   <div id="avvisoCodice" class="avviso rosso" hidden></div>
+  <p id="avvisoSchermo" class="avviso-piccolo" hidden>Lo schermo potrebbe spegnersi da solo (il telefono non lascia tenerlo acceso).</p>
 </header>
 
 <main>
@@ -137,7 +138,8 @@
 
     <div class="riquadro" id="riquadroStruttura">
       <div id="avvisoBrano" hidden></div>
-      <div class="testa-struttura"><h2>Struttura</h2><span id="strDurata"></span></div>
+      <div class="testa-struttura"><h2>Struttura</h2><span id="strDurata"></span><button type="button" id="btnMetronomo" class="metro-avvia">▶ Metronomo</button></div>
+      <p class="tenue piccolo" id="metroModo" hidden></p>
       <fieldset id="campiStruttura">
         <ul class="sezioni" id="listaSezioni"></ul>
         <p class="tenue piccolo" id="strVuota" hidden></p>
@@ -209,6 +211,28 @@
     <div class="lettura" id="letturaTesto"></div>
   </section>
 
+  <section id="vMetronomo" class="vista" hidden>
+    <h1 class="gotico">Metronomo</h1>
+    <div class="riquadro metro-solo">
+      <div class="bpm-grande"><input id="msBpm" type="number" inputmode="numeric" min="30" max="300" step="1" aria-label="BPM"><span>BPM</span></div>
+      <div class="passi-bpm">
+        <button type="button" class="secondario" data-passo="-5">−5</button>
+        <button type="button" class="secondario" data-passo="-1">−1</button>
+        <button type="button" class="secondario" data-passo="1">+1</button>
+        <button type="button" class="secondario" data-passo="5">+5</button>
+      </div>
+      <button type="button" id="btnTapM" class="tap tap-grande">TAP</button>
+      <p class="tenue piccolo centro" id="msTapInfo"></p>
+      <div class="riga-campi">
+        <div class="campo-col stretto"><label class="etichetta" for="msMetro">Metro</label><select id="msMetro"></select></div>
+        <div class="campo-col"><label class="etichetta" for="msRif">Riferimento</label><select id="msRif"></select></div>
+        <div class="campo-col stretto"><label class="etichetta" for="msFeel">Feel</label><select id="msFeel"></select></div>
+      </div>
+      <button type="button" id="btnAvviaM" class="metro-avvia grande">▶ Avvia</button>
+      <p class="tenue piccolo">Ottavi, accento, volume, conteggio e lampeggio sono quelli delle tue Impostazioni. Questi valori restano solo su questo telefono. Per suonarci sopra servono cuffie a filo: con il Bluetooth il click arriva in ritardo.</p>
+    </div>
+  </section>
+
   <section id="vImpostazioni" class="vista" hidden>
     <h1 class="gotico">Impostazioni</h1>
     <p class="tenue">Valgono solo per te e si salvano sul foglio della band. Quelle con l'etichetta grigia avranno effetto dalla tappa indicata.</p>
@@ -253,15 +277,26 @@
   <p class="versioni">app v<span id="versioneApp">…</span> · motore v<span id="versioneMotore">…</span></p>
 </main>
 
+<div id="barraMetro" hidden>
+  <div class="metro-riga">
+    <button type="button" id="mStop" class="metro-stop">■ Stop</button>
+    <div class="metro-testi"><b id="mNome"></b><span id="mPosizione"></span><small id="mPoi"></small></div>
+    <select id="mTempo" aria-label="Rallentamento"></select>
+  </div>
+  <div id="mLampo" class="metro-lampo" hidden></div>
+</div>
+
 <nav id="barra">
   <button data-vista="vInizio" class="attivo">Inizio</button>
   <button data-vista="vRepertorio">Repertorio</button>
+  <button data-vista="vMetronomo" id="navMetronomo">Metronomo</button>
   <button data-vista="vImpostazioni">Impostazioni</button>
   <button data-vista="vAdmin" id="navAdmin" hidden>Admin</button>
 </nav>
 
 <script src="lib/Sortable.min.js"></script>
 <script src="regole.js"></script>
+<script src="metronomo.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

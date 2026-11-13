@@ -1,4 +1,5 @@
-/* DFAK – Repertorio · comportamento dell'app e chiamate al motore (T2 Repertorio e scheda brano, T3 Struttura a sezioni, T5 Testi e bacheca). */
+/* DFAK – Repertorio · comportamento dell'app e chiamate al motore (T2 Repertorio e scheda brano, T3 Struttura a sezioni, T5 Testi e bacheca,
+ * T6 Metronomo e schermo sempre acceso). */
 'use strict';
 
 const VERSIONE_INTERFACCIA = 4;   // il motore rifiuta interfacce più vecchie della sua minima
@@ -181,6 +182,8 @@ function disegna() {
   if (corrente === 'vTesto' || corrente === 'vLettura') corrente = 'vBrano';
   if (corrente === 'vAdmin' && !stato.admin) corrente = 'vInizio';
   if (corrente === 'vImpostazioni' && !me) corrente = 'vInizio';
+  $('navMetronomo').hidden = !metroAttivo();
+  if (corrente === 'vMetronomo' && !metroAttivo()) corrente = 'vInizio';
   if (corrente === 'vBrano') {
     if (schedaOccupata()) { aggiornaRete(); return; }      // si sta scrivendo: non si ridisegna sotto le dita
     const id = memoria.get('branoAperto');
@@ -191,6 +194,9 @@ function disegna() {
 }
 
 function vai(vista) {
+  if (metro.inCorso() && ((metroDove === 'brano' && !['vBrano', 'vLettura'].includes(vista)) || (metroDove === 'solo' && vista !== 'vMetronomo'))) metro.ferma();
+  if (vista === 'vMetronomo') preparaSolo();
+  if (vista !== 'vMetronomo') tocchiSolo = [];
   document.querySelectorAll('.vista').forEach((v) => { v.hidden = v.id !== vista; });
   const voce = ['vBrano', 'vTesto', 'vLettura'].includes(vista) ? 'vRepertorio' : vista;
   document.querySelectorAll('#barra button').forEach((b) => b.classList.toggle('attivo', b.dataset.vista === voce));
@@ -325,6 +331,11 @@ function riempiScelte() {
 function apriBrano(id, daRidisegno) {
   const b = id ? brani().find((x) => x.id === id) : null;
   if (id && !b) return vai('vRepertorio');
+  const altroBrano = !branoAperto || !b || branoAperto.id !== b.id;
+  if (!daRidisegno || altroBrano) {     // T6: un brano aperto riparte al 100%, e quello di prima smette di suonare
+    if (metro.inCorso() && metroDove === 'brano') metro.ferma();
+    tempoStudio = 100;
+  }
   branoAperto = b ? Object.assign({}, b) : { id: nuovoIdBrano(), versione: 0, titolo: '', artista: '', tonalitaOriginale: '', scostamento: 0, accordatura: 'Mib', bpm: '', riferimento: 'Quarti', metro: '4/4', feel: 'Dritto', durataManuale: '', note: '', stato: 'In prova' };
   memoria.set('branoAperto', branoAperto.id);
   riempiScelte();
@@ -647,6 +658,7 @@ function aggiornaDurate() {
       ' (' + Regole.scriviDifferenza(b.durataManuale - d.secondi) + '). Vale la manuale.');
   } else if (d.secondi !== null) c.append('Calcolata dalla struttura: ', el('b', '', Regole.scriviDurata(d.secondi)), '. Vale questa finché non scrivi la manuale.');
   c.hidden = !c.textContent;
+  aggiornaPulsantiMetro();
 }
 
 function testoCambi(x) {
@@ -710,7 +722,10 @@ function disegnaStruttura() {
     su.addEventListener('click', () => spostaSezione(i, -1));
     giu.addEventListener('click', () => spostaSezione(i, 1));
     frecce.append(su, giu);
-    riga.append(maniglia, corpo, frecce); li.append(riga);
+    // T6: "▶ da qui" non è un <button>: senza rete i pulsanti della struttura si disattivano, il metronomo no
+    const dq = el('span', 'da-qui', '▶'); dq.setAttribute('role', 'button'); dq.setAttribute('aria-label', 'metronomo da questa sezione'); dq.tabIndex = 0;
+    dq.addEventListener('click', () => daQui(x.id));
+    riga.append(dq, maniglia, corpo, frecce); li.append(riga);
     if (struttura.aperta === x.id) li.append(editorSezione(x));
     ul.append(li);
   });
@@ -722,6 +737,8 @@ function disegnaStruttura() {
   disegnaAvvisoBrano();
   preparaOrdinatore();
   aggiornaDurate();
+  const pos = metro.posizione();
+  evidenziaInCorso(pos && !pos.conteggio ? pos.sezione : null);
   aggiornaRete();
 }
 
@@ -1173,6 +1190,7 @@ $('btnDividi').addEventListener('click', () => {
   ins.analisi = a;
   ins.conStruttura = struttura.brano === ins.brano && struttura.sezioni.length > 0;
   ins.intro = false; ins.finale = false;
+  ins.proposte = null; ins.proposteDa = null;   // (difetto T5 trovato nella T6) dopo "Torna al testo" restavano i tipi della divisione di prima
   if (ins.conStruttura) {
     const dest = Regole.abbinaAStruttura(a, struttura.sezioni);
     ins.righe = a.blocchi.map((b, i) => ({ blocco: i, tipo: b.tipo, ripetizioni: b.ripetizioni, dest: dest[i] })).filter((r) => !a.blocchi[r.blocco].strumentale);
@@ -1219,15 +1237,25 @@ function disegnaControllo() {
     meno.addEventListener('click', () => onCambia(Math.max(1, val - 1))); piu.addEventListener('click', () => onCambia(Math.min(Regole.MAX_RIPETIZIONI, val + 1)));
     p.append(meno, o, piu); return p;
   };
+  /** (correzione rimandata dalla T5) il riferimento usa il numero della RIGA mostrata e il suo tipo, es. "riga 4 (Rit)":
+   *  con "aggiungi un Intro in testa" le righe scalano di uno e il numero del blocco analizzato non corrisponde più. */
+  const rigaDi = (j) => {
+    if (!ins.conStruttura) {
+      const lista = righeProposte(), n = lista.findIndex((p) => p.blocco === j);
+      return n >= 0 ? 'riga ' + (n + 1) + ' (' + lista[n].tipo + ')' : 'riga ' + (j + 1);
+    }
+    const r = ins.righe.find((x) => x.blocco === j);
+    return 'riga ' + (j + 1) + (r ? ' (' + r.tipo + ')' : '');
+  };
   const corpoTesto = (b, i) => {
     const box = el('div', 'blocco-testo');
     if (b.strumentale) { box.append(el('span', 'tenue', 'strumentale: nessun testo')); return box; }
     const prec = a.blocchi.findIndex((x, j) => j < i && x.gruppo === b.gruppo);
-    if (prec >= 0) box.append(el('span', 'uguale', '= stesso testo del blocco ' + (prec + 1)));
+    if (prec >= 0) box.append(el('span', 'uguale', '= stesso testo della ' + rigaDi(prec)));
     else box.append(el('pre', '', b.testo));
     if (b.quasiUgualeA >= 0 && prec < 0) {
       const q = el('div', 'quasi');
-      q.append(el('span', '', '≈ quasi uguale al blocco ' + (b.quasiUgualeA + 1) + ': lo tengo separato. '));
+      q.append(el('span', '', '≈ quasi uguale alla ' + rigaDi(b.quasiUgualeA) + ': lo tengo separato. '));
       const u = el('button', 'secondario', 'Usa lo stesso testo'); u.type = 'button';
       u.addEventListener('click', () => { const g = a.blocchi[b.quasiUgualeA].gruppo; a.blocchi.forEach((x) => { if (x.gruppo === b.gruppo) { x.gruppo = g; x.testo = a.blocchi[b.quasiUgualeA].testo; } }); b.quasiUgualeA = -1; disegnaControllo(); });
       q.append(u); box.append(q);
@@ -1238,7 +1266,7 @@ function disegnaControllo() {
     righeProposte().forEach((p, n) => {
       const li = el('li', 'blocco' + (p.blocco < 0 ? ' segnaposto' : ''));
       const testa = el('div', 'testa-blocco');
-      testa.append(el('b', 'num', String(n + 1)), tipoSel(p.tipo, (v) => { p.tipo = v; }), passi(p.ripetizioni, (v) => { p.ripetizioni = v; disegnaControllo(); }));
+      testa.append(el('b', 'num', String(n + 1)), tipoSel(p.tipo, (v) => { p.tipo = v; disegnaControllo(); }), passi(p.ripetizioni, (v) => { p.ripetizioni = v; disegnaControllo(); }));
       li.append(testa, p.blocco >= 0 ? corpoTesto(a.blocchi[p.blocco], p.blocco) : el('div', 'blocco-testo tenue', p.tipo === 'Intro' || p.tipo === 'Finale' ? 'segnaposto senza testo (battute da scrivere)' : 'strumentale: nessun testo'));
       ul.append(li);
     });
@@ -1255,7 +1283,7 @@ function disegnaControllo() {
       s.value = r.dest;
       s.addEventListener('change', () => { r.dest = s.value; disegnaControllo(); });
       testa.append(el('b', 'num', String(r.blocco + 1)), s);
-      if (r.dest === 'nuova') testa.append(tipoSel(r.tipo, (v) => { r.tipo = v; }), passi(r.ripetizioni, (v) => { r.ripetizioni = v; disegnaControllo(); }));
+      if (r.dest === 'nuova') testa.append(tipoSel(r.tipo, (v) => { r.tipo = v; disegnaControllo(); }), passi(r.ripetizioni, (v) => { r.ripetizioni = v; disegnaControllo(); }));
       li.append(testa, corpoTesto(b, r.blocco));
       ul.append(li);
     });
@@ -1400,6 +1428,199 @@ async function sistemato(id) {
     if (branoAperto) disegnaAvvisoBrano();
   } catch (e) { statoSalva('non salvato', 'errore'); }
 }
+
+/* ---------- T6 · Metronomo ----------
+ * Due modi di partire: dalla scheda del brano (segue la struttura, o libero con il motivo) e dalla schermata
+ * Metronomo (da solo, valori ricordati solo su questo telefono). Una sola barra in basso mentre suona.
+ * Si ferma uscendo dal brano (non passando a "Leggi tutto il testo"), uscendo dalla schermata Metronomo e
+ * quando l'app va in background (decisione B1: meglio fermo che a tempo sbagliato). */
+const metro = Metronomo.crea();
+let metroDove = null;          // 'brano' | 'solo' | null
+let metroBrano = null;         // id del brano che sta suonando
+let tempoStudio = 100;         // rallentamento del brano aperto: torna a 100 a ogni apertura
+let timerLampo = null;
+let metroUltimoMotivo = '';
+const metroAttivo = () => impostazioni().metronomoAttivo !== false;
+function opzioniMetro() {
+  const i = impostazioni();
+  return { ottavi: i.metronomoSuddivisione === 'Ottavi', accento: !!i.metronomoAccento, conteggio: String(i.metronomoConteggio === undefined ? '1' : i.metronomoConteggio) };
+}
+function pianoBrano(daSezione) {
+  if (!branoAperto) return { modo: 'nessuno', motivo: '', tratti: [] };
+  const sez = struttura.brano === branoAperto.id ? struttura.sezioni : [];
+  return Regole.pianoMetronomo(branoPerDurata(), sez, Object.assign(opzioniMetro(), { daSezione }));
+}
+/** Pulsante "▶ Metronomo", "▶ da qui" sulle righe e riga che dice come suonerà (struttura o libero, e perché). */
+function aggiornaPulsantiMetro() {
+  const b = $('btnMetronomo'), info = $('metroModo');
+  if (!b) return;
+  const attivo = metroAttivo() && !!branoAperto;
+  b.hidden = !attivo; $('navMetronomo').hidden = !metroAttivo();
+  const p = attivo ? pianoBrano() : null;
+  const suona = metro.inCorso() && metroDove === 'brano';
+  b.textContent = suona ? '■ Stop' : '▶ Metronomo';
+  b.classList.toggle('suona', suona);
+  b.disabled = !!p && p.modo === 'nessuno';
+  info.hidden = !attivo || !p || p.modo === 'struttura';
+  info.textContent = p ? (p.modo === 'nessuno' ? 'Metronomo: ' + p.motivo + '.' : 'Metronomo ' + p.motivo + '.') : '';
+  document.querySelectorAll('#listaSezioni .da-qui').forEach((x) => { x.hidden = !attivo || !p || p.modo !== 'struttura'; });
+}
+function evidenziaInCorso(idSezione) {
+  document.querySelectorAll('#listaSezioni li.sezione.in-corso').forEach((x) => x.classList.remove('in-corso'));
+  if (!idSezione || metroDove !== 'brano') return;
+  const li = document.querySelector('#listaSezioni li[data-id="' + idSezione + '"]');
+  if (li) li.classList.add('in-corso');
+}
+function riempiTempo() {
+  const s = $('mTempo');
+  if (!s.options.length) for (let t = Regole.TEMPO_MAX; t >= Regole.TEMPO_MIN; t -= Regole.TEMPO_PASSO) s.append(new Option(t + '%', String(t)));
+  s.value = String(tempoStudio);
+  s.classList.toggle('rallentato', tempoStudio < 100);
+}
+function mostraBarra(dove) {
+  $('barraMetro').hidden = false; document.body.classList.add('con-metro');
+  $('mTempo').hidden = dove !== 'brano';
+  $('mLampo').hidden = !impostazioni().metronomoLampeggio;
+  $('mNome').textContent = 'pronto…'; $('mPosizione').textContent = ''; $('mPoi').textContent = '';
+  riempiTempo();
+}
+function nascondiBarra() {
+  $('barraMetro').hidden = true; document.body.classList.remove('con-metro');
+  evidenziaInCorso(null);
+}
+function avviaMetro(piano, dove, opz) {
+  if (!piano || piano.modo === 'nessuno' || !piano.tratti.length) return;
+  metroDove = dove; metroBrano = dove === 'brano' && branoAperto ? branoAperto.id : null;
+  mostraBarra(dove);
+  metro.avvia(piano, { tempo: dove === 'brano' ? tempoStudio : 100, volume: impostazioni().metronomoVolume }).then(() => { aggiornaPulsantiMetro(); aggiornaPulsanteSolo(); })
+    .catch(() => { fermaMetro(); mostra('avvisoCodice', 'Questo telefono non ha aperto l\'audio: tocca di nuovo ▶.', true); });
+  metroUltimoMotivo = piano.motivo || '';
+}
+function fermaMetro() { if (metro.inCorso()) metro.ferma(); else { nascondiBarra(); metroDove = null; metroBrano = null; aggiornaPulsantiMetro(); aggiornaPulsanteSolo(); } }
+const bpmTesto = (x) => String(Math.round(x * 10) / 10).replace('.', ',');
+metro.su('battuta', (a) => {
+  const rall = a.tempo < 100 ? ' (' + a.tempo + '%)' : '';
+  if (a.conteggio) { $('mNome').textContent = 'Conteggio'; $('mPosizione').textContent = 'batt. ' + a.battuta + '/' + a.battute; }
+  else if (a.battute === null) {
+    $('mNome').textContent = metroDove === 'solo' ? 'Metronomo' : 'Libero';
+    $('mPosizione').textContent = 'batt. ' + a.battuta + ' · ' + bpmTesto(a.bpm) + ' BPM' + rall + ' · ' + a.metro;
+  } else {
+    // riga 2: battuta e tempo; riga 3 da sola: cosa viene dopo (a 390 px una riga unica veniva tagliata)
+    $('mNome').textContent = a.nome;
+    $('mPosizione').textContent = 'batt. ' + a.battuta + '/' + a.battute + (a.giri > 1 ? ' · giro ' + a.giro + '/' + a.giri : '') + ' · ' + bpmTesto(a.bpm) + ' BPM' + rall + ' · ' + a.metro;
+  }
+  if (a.conteggio) $('mPosizione').textContent += ' · ' + bpmTesto(a.bpm) + ' BPM' + rall + ' · ' + a.metro;
+  $('mPoi').textContent = a.battute === null ? (metroDove === 'brano' ? metroUltimoMotivo : '') : a.conteggio ? 'poi: ' + (a.prossimo ? a.prossimo.nome : '') : a.prossimo ? 'poi: ' + a.prossimo.nome + ' tra ' + a.prossimo.tra + ' batt.' : 'ultima sezione';
+  evidenziaInCorso(a.conteggio ? null : a.sezione);
+});
+metro.su('colpo', (c) => {
+  if (!impostazioni().metronomoLampeggio || c.tipo === 'suddivisione') return;
+  const l = $('mLampo');
+  l.classList.add('acceso'); l.classList.toggle('uno', c.battito === 1);
+  clearTimeout(timerLampo); timerLampo = setTimeout(() => l.classList.remove('acceso', 'uno'), 90);
+});
+metro.su('fermo', (f) => {
+  nascondiBarra(); metroDove = null; metroBrano = null;
+  aggiornaPulsantiMetro(); aggiornaPulsanteSolo();
+  if (f && f.fine) statoSalva('metronomo: fine del brano');
+});
+$('mStop').addEventListener('click', fermaMetro);
+$('mTempo').addEventListener('change', () => {
+  tempoStudio = Number($('mTempo').value) || 100;
+  $('mTempo').classList.toggle('rallentato', tempoStudio < 100);
+  metro.cambiaTempo(tempoStudio);      // vale dalla battuta successiva
+});
+$('btnMetronomo').addEventListener('click', () => {
+  if (metro.inCorso() && metroDove === 'brano') return fermaMetro();
+  avviaMetro(pianoBrano(), 'brano');
+});
+/** "▶ da qui": un tocco sulla riga della sezione (anche senza rete). */
+function daQui(idSezione) {
+  const p = pianoBrano(idSezione);
+  if (p.modo !== 'struttura') return;
+  avviaMetro(p, 'brano');
+}
+// Si ferma in background (B1): Chrome rallenta i programmi e il click non sarebbe più a tempo
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && metro.inCorso()) metro.ferma(); });
+
+/* Metronomo da solo: valori solo su questo telefono (dfak-metroSolo), niente rete. */
+let solo = Object.assign({ bpm: 120, metro: '4/4', riferimento: 'Quarti', feel: 'Dritto' }, memoria.get('metroSolo') || {});
+let tocchiSolo = [];
+function salvaSolo() { memoria.set('metroSolo', solo); }
+function preparaSolo() {
+  if (!$('msMetro').options.length) {
+    Regole.METRI.forEach((x) => $('msMetro').append(new Option(x, x)));
+    Regole.RIFERIMENTI.forEach((x) => $('msRif').append(new Option(x, x)));
+    Regole.FEEL.forEach((x) => $('msFeel').append(new Option(x, x)));
+  }
+  $('msBpm').value = solo.bpm; $('msMetro').value = solo.metro; $('msRif').value = solo.riferimento; $('msFeel').value = solo.feel;
+  $('msTapInfo').textContent = 'Batti a tempo: ' + solo.riferimento.toLowerCase() + ' (almeno 4 tocchi).';
+  aggiornaPulsanteSolo();
+}
+function aggiornaPulsanteSolo() {
+  const s = metro.inCorso() && metroDove === 'solo';
+  $('btnAvviaM').textContent = s ? '■ Ferma' : '▶ Avvia';
+  $('btnAvviaM').classList.toggle('suona', s);
+}
+function pianoSolo() { return Regole.pianoLibero(solo, opzioniMetro()); }
+function bpmSolo(v, daTap) {
+  v = Math.round(Number(v));
+  if (!(v >= Regole.BPM_MIN && v <= Regole.BPM_MAX)) { $('msBpm').classList.add('invalido'); return; }
+  $('msBpm').classList.remove('invalido');
+  solo.bpm = v; salvaSolo();
+  if (!daTap || document.activeElement !== $('msBpm')) $('msBpm').value = v;
+  if (metro.inCorso() && metroDove === 'solo') metro.cambiaBpm(v);    // dalla battuta successiva
+}
+$('msBpm').addEventListener('input', () => bpmSolo($('msBpm').value));
+$('msBpm').addEventListener('blur', () => { $('msBpm').value = solo.bpm; $('msBpm').classList.remove('invalido'); });
+document.querySelectorAll('.passi-bpm button').forEach((b) => b.addEventListener('click', () => bpmSolo(Math.max(Regole.BPM_MIN, Math.min(Regole.BPM_MAX, solo.bpm + Number(b.dataset.passo))))));
+$('btnTapM').addEventListener('pointerdown', (ev) => {
+  ev.preventDefault();
+  tocchiSolo = Regole.tapAggiungi(tocchiSolo, ev.timeStamp || performance.now());
+  const bpm = Regole.tapBpm(tocchiSolo);
+  if (bpm) { bpmSolo(bpm, true); $('msTapInfo').textContent = bpm + ' BPM dal tap (' + tocchiSolo.length + ' tocchi, ' + solo.riferimento.toLowerCase() + ')' + (metro.inCorso() && metroDove === 'solo' ? ': cambia dalla prossima battuta.' : '. Fermati 2 s per ricominciare.'); }
+  else $('msTapInfo').textContent = tocchiSolo.length < 4 ? 'Ancora ' + (4 - tocchiSolo.length) + ' tocchi…' : 'Tocchi irregolari: continua a tempo.';
+});
+$('msMetro').addEventListener('change', () => {
+  const prima = solo.metro, dopo = $('msMetro').value;
+  if (solo.riferimento === Regole.riferimentoSuggerito(prima)) { solo.riferimento = Regole.riferimentoSuggerito(dopo); $('msRif').value = solo.riferimento; }
+  solo.metro = dopo; cambioSolo();
+});
+$('msRif').addEventListener('change', () => { solo.riferimento = $('msRif').value; cambioSolo(); });
+$('msFeel').addEventListener('change', () => { solo.feel = $('msFeel').value; cambioSolo(); });
+function cambioSolo() {
+  salvaSolo();
+  $('msTapInfo').textContent = 'Batti a tempo: ' + solo.riferimento.toLowerCase() + ' (almeno 4 tocchi).';
+  if (metro.inCorso() && metroDove === 'solo') avviaMetro(pianoSolo(), 'solo');    // metro o riferimento nuovi: si riparte
+}
+$('btnAvviaM').addEventListener('click', () => {
+  if (metro.inCorso() && metroDove === 'solo') return fermaMetro();
+  avviaMetro(pianoSolo(), 'solo');
+});
+
+/* ---------- T6 · Schermo sempre acceso (decisione di Francesco) ----------
+ * In tutta l'app finché è in primo piano; Android lo toglie da solo in background, e al ritorno si richiede.
+ * Se il telefono non lo permette: una riga discreta, niente video di ripiego (il blocco nativo è collaudato dalla T0). */
+let bloccoSchermo = null, richiestaSchermo = false, ultimaProvaSchermo = 0;
+async function tieniAcceso() {
+  if (document.visibilityState !== 'visible' || bloccoSchermo || richiestaSchermo) return;
+  if (!('wakeLock' in navigator)) { $('avvisoSchermo').hidden = false; return; }
+  richiestaSchermo = true; ultimaProvaSchermo = Date.now();
+  try {
+    bloccoSchermo = await navigator.wakeLock.request('screen');
+    $('avvisoSchermo').hidden = true;
+    bloccoSchermo.addEventListener('release', () => {
+      bloccoSchermo = null;
+      if (document.visibilityState === 'visible') setTimeout(tieniAcceso, 1000);    // tolto da Android (es. risparmio energetico)
+    });
+  } catch (e) {
+    $('avvisoSchermo').hidden = false;
+  } finally { richiestaSchermo = false; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tieniAcceso(); });
+// (non ovvio) dopo un rifiuto si riprova al tocco, ma al massimo ogni 30 s: una richiesta a ogni tocco ritarderebbe il tap tempo
+document.addEventListener('pointerdown', () => { if (!bloccoSchermo && Date.now() - ultimaProvaSchermo > 30000) tieniAcceso(); }, { passive: true });
+tieniAcceso();
 
 /* ---------- Impostazioni personali (salvate sul foglio) ---------- */
 let impostazioniSalvate = null;

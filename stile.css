@@ -265,3 +265,39 @@ li.blocco.segnaposto { border-style: dashed; }
 .lettura h3 { margin: 0 0 2px; font-size: 15px; color: var(--oro); letter-spacing: .3px; text-transform: uppercase; }
 .lettura .parole { margin: 0; font-size: 22px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; }
 .lettura .senza h3 { color: var(--tenue); }
+
+/* ---------- T6 · Metronomo ---------- */
+.avviso-piccolo { margin: 6px 0 0; font-size: 12px; color: var(--tenue); }
+.avviso-piccolo[hidden] { display: none; }
+button.metro-avvia { background: #1d2550; border: 1px solid var(--oro); color: var(--oro); font-weight: 600; min-height: 40px; padding: 6px 12px; margin: 0 0 0 auto; }
+button.metro-avvia.grande { display: block; width: 100%; min-height: 56px; margin: 12px 0 8px; font-size: 20px; }
+button.metro-avvia.suona { background: var(--oro); color: #000; }
+button.metro-avvia[hidden] { display: none; }
+#metroModo { margin: 6px 0 0; }
+#metroModo[hidden] { display: none; }
+/* "▶ da qui": non è un pulsante (senza rete i pulsanti della struttura si disattivano), funziona sempre */
+.riga-sez .da-qui { flex: 0 0 auto; align-self: center; width: 34px; height: 34px; line-height: 34px; text-align: center; border-radius: 50%; color: var(--oro); border: 1px solid #4a5266; font-size: 13px; cursor: pointer; user-select: none; -webkit-user-select: none; }
+.riga-sez .da-qui:active { background: var(--oro); color: #000; }
+li.sezione.in-corso > .riga-sez { box-shadow: inset 4px 0 0 var(--oro); background: #23283a; border-radius: 8px; }
+#barraMetro { position: fixed; left: 0; right: 0; bottom: calc(var(--barra) + env(safe-area-inset-bottom)); z-index: 11; background: #0d1020; border-top: 2px solid var(--oro); padding: 6px 10px; }
+#barraMetro[hidden] { display: none; }
+body.con-metro { padding-bottom: calc(var(--barra) + env(safe-area-inset-bottom) + 96px); }
+.metro-riga { display: flex; align-items: center; gap: 8px; }
+button.metro-stop { margin: 0; flex: 0 0 auto; background: #4a1714; border-color: var(--rosso); font-weight: 700; padding: 8px 10px; }
+.metro-testi { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.metro-testi b { color: var(--oro); font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.metro-testi span { font-size: 14px; font-variant-numeric: tabular-nums; }
+.metro-testi small { color: var(--tenue); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mTempo { flex: 0 0 auto; width: auto; font-size: 15px; padding: 6px; }
+#mTempo.rallentato { border-color: var(--oro); color: var(--oro); font-weight: 700; }
+#mTempo[hidden] { display: none; }
+.metro-lampo { height: 14px; margin: 6px 0 0; border-radius: 4px; background: #1a1d29; }
+.metro-lampo[hidden] { display: none; }
+.metro-lampo.acceso { background: #fff; }
+.metro-lampo.acceso.uno { background: var(--oro); }
+.metro-solo .bpm-grande { display: flex; align-items: baseline; justify-content: center; gap: 8px; }
+.metro-solo .bpm-grande input { width: 3.4em; font-size: 56px; font-weight: 700; text-align: center; color: var(--oro); background: transparent; border: 0; border-bottom: 2px solid #3a4152; border-radius: 0; padding: 0; }
+.metro-solo .bpm-grande span { color: var(--tenue); font-size: 18px; }
+.passi-bpm { display: flex; justify-content: center; gap: 6px; margin: 8px 0; }
+.passi-bpm button { margin: 0; min-width: 64px; font-size: 18px; }
+button.tap-grande { min-height: 120px; font-size: 34px; }

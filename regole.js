@@ -8,10 +8,12 @@
  *     metro 2/2 e riferimento Minime, feel Dritto / Shuffle.
  * T5: testi (pulizia, righe di accordi, etichette, blocchi ripetuti e quasi uguali, struttura proposta,
  *     abbinamento alle sezioni), impostazione "Testi nelle sezioni", avvisi della bacheca.
+ * T6: metronomo (colpi di una battuta con ottavi, shuffle e accento; piano che segue la struttura o libero;
+ *     rallentamento; durata del piano).
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 4;
-  var TAPPA = 5;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
+  var VERSIONE_REGOLE = 5;
+  var TAPPA = 6;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
   var MEMBRI = [
@@ -726,6 +728,119 @@ var Regole = (function () {
     return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' + z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds());
   }
 
+  /* ================= T6 · Metronomo =================
+   * Le posizioni dei colpi sono in BATTITI del riferimento (0 = inizio della battuta); i secondi li calcola
+   * l'orologio audio (metronomo.js) con il BPM e il rallentamento. Così le regole restano provabili qui.
+   */
+  var TEMPO_MIN = 50, TEMPO_MAX = 100, TEMPO_PASSO = 5;
+  function tempoValido(t) { return typeof t === 'number' && t >= TEMPO_MIN && t <= TEMPO_MAX && t % TEMPO_PASSO === 0; }
+  /** Battiti del riferimento in una battuta (può non essere intero, es. 4/4 a quarti puntati = 8/3). */
+  function battitiPerBattuta(metro, riferimento) { return QUARTI_PER_BATTUTA[metro] / QUARTI_PER_BATTITO[riferimento]; }
+  function battitiInteri(metro, riferimento) {
+    var n = battitiPerBattuta(metro, riferimento);
+    return n > 0 && Math.abs(n - Math.round(n)) < 1e-9;
+  }
+
+  /**
+   * Colpi di una battuta: [{ pos, tipo }] con tipo 'accento' | 'battito' | 'suddivisione', in ordine.
+   * opzioni: { ottavi, accento, battiti } (battiti: per forzare il numero di battiti, usato dal libero non intero).
+   * - Quarti: con Ottavi +1 colpo a metà del battito; con lo Shuffle a 2/3.
+   * - Minime: con Ottavi +1 a metà (lo Shuffle si ignora).
+   * - Quarti puntati: con Ottavi +2 a 1/3 e 2/3 (lo Shuffle si ignora: è già ternario).
+   * - Ottavi: i colpi sono già ottavi; con lo Shuffle il secondo di ogni coppia cade a 2/3 del quarto (4/3 di ottavo).
+   */
+  function colpiBattuta(metro, riferimento, feel, opzioni) {
+    opzioni = opzioni || {};
+    var n = opzioni.battiti || Math.round(battitiPerBattuta(metro, riferimento));
+    var shuffle = feel === 'Shuffle', out = [];
+    for (var k = 0; k < n; k++) {
+      var p = k;
+      if (riferimento === 'Ottavi' && shuffle && k % 2 === 1) p = k - 1 + 4 / 3;
+      out.push({ pos: p, tipo: k === 0 && opzioni.accento && !opzioni.battiti ? 'accento' : 'battito' });
+      if (!opzioni.ottavi) continue;
+      if (riferimento === 'Quarti') out.push({ pos: k + (shuffle ? 2 / 3 : 0.5), tipo: 'suddivisione' });
+      else if (riferimento === 'Minime') out.push({ pos: k + 0.5, tipo: 'suddivisione' });
+      else if (riferimento === 'Quarti puntati') { out.push({ pos: k + 1 / 3, tipo: 'suddivisione' }); out.push({ pos: k + 2 / 3, tipo: 'suddivisione' }); }
+    }
+    return out.sort(function (a, b) { return a.pos - b.pos; });
+  }
+
+  /** Un tratto del piano: una sezione (o il conteggio, o il libero) con tutto ciò che serve all'orologio. */
+  function trattoMetronomo(t, nome, battute, giri, opzioni, extra) {
+    var interi = battitiInteri(t.metro, t.riferimento);
+    var o = {
+      sezione: '', nome: nome, battute: battute, giri: giri, conteggio: false,
+      bpm: Number(t.bpm), metro: t.metro, riferimento: t.riferimento, feel: t.feel || 'Dritto',
+      battitiBattuta: interi ? Math.round(battitiPerBattuta(t.metro, t.riferimento)) : 1,
+      colpi: colpiBattuta(t.metro, t.riferimento, t.feel, { ottavi: !!opzioni.ottavi, accento: !!opzioni.accento, battiti: interi ? 0 : 1 })
+    };
+    for (var k in extra || {}) o[k] = extra[k];
+    return o;
+  }
+  /** Battute di conteggio (0, 1 o 2) con il tempo del primo tratto; con battiti non interi: battute da 1 battito. */
+  function conteggioMetronomo(primo, opzioni) {
+    var n = Number(opzioni.conteggio) || 0;
+    if (!n || !primo) return [];
+    var interi = battitiInteri(primo.metro, primo.riferimento);
+    var battute = interi ? n : n * Math.max(1, Math.round(battitiPerBattuta(primo.metro, primo.riferimento)));
+    return [trattoMetronomo(primo, 'conteggio', battute, 1, opzioni, { conteggio: true })];
+  }
+
+  /** Metronomo libero (anche da solo, senza brano): tempo fisso finché non si ferma. tempo = { bpm, metro, riferimento, feel }. */
+  function pianoLibero(tempo, opzioni, motivo) {
+    opzioni = opzioni || {};
+    var t = { bpm: Number(tempo.bpm), metro: tempo.metro || '4/4', riferimento: tempo.riferimento || 'Quarti', feel: tempo.feel || 'Dritto' };
+    if (!(t.bpm >= BPM_MIN && t.bpm <= BPM_MAX)) return { modo: 'nessuno', motivo: 'Scrivi il BPM del brano', tratti: [] };
+    var libero = trattoMetronomo(t, 'libero', null, 1, opzioni);
+    return { modo: 'libero', motivo: motivo || '', tratti: conteggioMetronomo(t, opzioni).concat([libero]) };
+  }
+
+  /**
+   * Piano del metronomo per un brano (decisione di Francesco, T6):
+   * - "struttura" se ogni sezione ha le battute, un BPM (suo o del brano) e battiti per battuta interi:
+   *   si percorre tutta (da opzioni.daSezione, se c'è) e ci si ferma dopo l'ultima battuta;
+   * - altrimenti "libero" con il tempo del brano, e il motivo da mostrare;
+   * - "nessuno" se serve il libero ma il brano non ha il BPM.
+   * opzioni: { daSezione, ottavi, accento, conteggio: '0' | '1' | '2' }.
+   */
+  function pianoMetronomo(brano, sezioni, opzioni) {
+    brano = brano || {}; sezioni = sezioni || []; opzioni = opzioni || {};
+    var tempoBrano = { bpm: brano.bpm, metro: brano.metro || '4/4', riferimento: brano.riferimento || 'Quarti', feel: brano.feel || 'Dritto' };
+    if (!sezioni.length) return pianoLibero(tempoBrano, opzioni, 'libero: il brano non ha ancora una struttura');
+    var nomi = nomiSezioni(sezioni), senzaBattute = [], senzaBpm = [], nonIntere = [];
+    sezioni.forEach(function (s, i) {
+      var t = tempoSezione(s, brano);
+      if (vuoto(s.battute) || !(Number(s.battute) > 0)) senzaBattute.push(nomi[i]);
+      else if (!(t.bpm > 0)) senzaBpm.push(nomi[i]);
+      else if (!battitiInteri(t.metro, t.riferimento)) nonIntere.push(nomi[i] + ' (' + t.metro + ' a ' + t.riferimento.toLowerCase() + ')');
+    });
+    if (senzaBattute.length) return pianoLibero(tempoBrano, opzioni, 'libero: mancano le battute in ' + senzaBattute.join(', '));
+    if (senzaBpm.length) return pianoLibero(tempoBrano, opzioni, 'libero: manca il BPM in ' + senzaBpm.join(', '));
+    if (nonIntere.length) return pianoLibero(tempoBrano, opzioni, 'libero: battute non intere in ' + nonIntere.join(', '));
+    var da = 0;
+    sezioni.forEach(function (s, i) { if (opzioni.daSezione && s.id === opzioni.daSezione) da = i; });
+    var tratti = [];
+    for (var i = da; i < sezioni.length; i++) {
+      var s = sezioni[i];
+      tratti.push(trattoMetronomo(tempoSezione(s, brano), nomi[i], Number(s.battute), Number(s.ripetizioni) || 1, opzioni, { sezione: s.id }));
+    }
+    return { modo: 'struttura', motivo: '', tratti: conteggioMetronomo(tratti[0], opzioni).concat(tratti) };
+  }
+
+  /** Secondi di un battito del tratto, con il rallentamento in percento (100 = tempo scritto). */
+  function secondiBattito(tratto, tempo) { return 60 / (tratto.bpm * (Number(tempo) || 100) / 100); }
+  /** Durata del piano senza il conteggio; null se c'è un tratto senza fine (libero). */
+  function durataPiano(piano, tempo) {
+    var tot = 0;
+    for (var i = 0; i < piano.tratti.length; i++) {
+      var t = piano.tratti[i];
+      if (t.conteggio) continue;
+      if (t.battute === null) return null;
+      tot += t.battute * t.giri * t.battitiBattuta * secondiBattito(t, tempo);
+    }
+    return tot;
+  }
+
   return {
     VERSIONE_REGOLE: VERSIONE_REGOLE,
     TAPPA: TAPPA,
@@ -810,6 +925,17 @@ var Regole = (function () {
     primaRiga: primaRiga,
     TIPI_AVVISO: TIPI_AVVISO,
     testoAvvisoTesto: testoAvvisoTesto,
-    giorniPrima: giorniPrima
+    giorniPrima: giorniPrima,
+    TEMPO_MIN: TEMPO_MIN,
+    TEMPO_MAX: TEMPO_MAX,
+    TEMPO_PASSO: TEMPO_PASSO,
+    tempoValido: tempoValido,
+    battitiPerBattuta: battitiPerBattuta,
+    battitiInteri: battitiInteri,
+    colpiBattuta: colpiBattuta,
+    pianoLibero: pianoLibero,
+    pianoMetronomo: pianoMetronomo,
+    secondiBattito: secondiBattito,
+    durataPiano: durataPiano
   };
 })();
