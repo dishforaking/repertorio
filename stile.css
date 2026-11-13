@@ -301,3 +301,18 @@ button.metro-stop { margin: 0; flex: 0 0 auto; background: #4a1714; border-color
 .passi-bpm { display: flex; justify-content: center; gap: 6px; margin: 8px 0; }
 .passi-bpm button { margin: 0; min-width: 64px; font-size: 18px; }
 button.tap-grande { min-height: 120px; font-size: 34px; }
+
+/* ---------- T6 · variante: conteggio riconoscibile, riferimento chiaro ---------- */
+:root { --verde-conta: #2ecc71; }
+.metro-numero { flex: 0 0 auto; width: 52px; height: 52px; line-height: 50px; text-align: center; font-size: 38px; font-weight: 800; color: var(--verde-conta); border: 2px solid var(--verde-conta); border-radius: 10px; font-variant-numeric: tabular-nums; }
+.metro-numero[hidden] { display: none; }
+.metro-numero.acceso { background: var(--verde-conta); color: #000; }
+.metro-lampo.acceso.conta { background: var(--verde-conta); }
+.equivalenza { margin: 4px 0 8px; font-size: 14px; color: #9fb3ff; font-variant-numeric: tabular-nums; }
+.equivalenza[hidden] { display: none; }
+.suddivisione { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 0; }
+.suddivisione .etichetta { margin: 0; }
+.scelta-due { display: inline-flex; border: 1px solid #4a5266; border-radius: 10px; overflow: hidden; }
+.scelta-due button { margin: 0; border: 0; border-radius: 0; min-width: 64px; min-height: 44px; font-size: 26px; background: #1a1d29; color: var(--tenue); }
+.scelta-due button.scelto { background: var(--oro); color: #000; font-weight: 700; }
+.scelta-due button:disabled { opacity: .45; }

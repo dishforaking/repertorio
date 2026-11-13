@@ -121,6 +121,7 @@
               <select id="bFeel"></select>
             </div>
           </div>
+          <p class="equivalenza" id="bEquivalenza" hidden></p>
           <p class="suggerito" id="rifSuggerito" hidden></p>
           <button type="button" id="btnTap" class="tap">TAP</button>
           <p class="tenue piccolo centro" id="tapInfo">Batti a tempo sull'unità di riferimento (almeno 4 tocchi).</p>
@@ -228,8 +229,17 @@
         <div class="campo-col"><label class="etichetta" for="msRif">Riferimento</label><select id="msRif"></select></div>
         <div class="campo-col stretto"><label class="etichetta" for="msFeel">Feel</label><select id="msFeel"></select></div>
       </div>
+      <p class="equivalenza" id="msEquivalenza" hidden></p>
+      <div class="suddivisione">
+        <span class="etichetta">Suddivisione</span>
+        <div id="msSuddivisione" class="scelta-due" role="group" aria-label="Suddivisione">
+          <button type="button" data-ottavi="0" aria-label="solo i battiti">♩</button>
+          <button type="button" data-ottavi="1" aria-label="ottavi">♪</button>
+        </div>
+        <small class="tenue" id="msSudInfo"></small>
+      </div>
       <button type="button" id="btnAvviaM" class="metro-avvia grande">▶ Avvia</button>
-      <p class="tenue piccolo">Ottavi, accento, volume, conteggio e lampeggio sono quelli delle tue Impostazioni. Questi valori restano solo su questo telefono. Per suonarci sopra servono cuffie a filo: con il Bluetooth il click arriva in ritardo.</p>
+      <p class="tenue piccolo">Accento, volume, conteggio e lampeggio sono quelli delle tue Impostazioni; la suddivisione parte da lì e poi resta quella scelta qui. Il riferimento dice quale nota conta il BPM. Questi valori restano solo su questo telefono. Per suonarci sopra servono cuffie a filo: con il Bluetooth il click arriva in ritardo.</p>
     </div>
   </section>
 
@@ -281,6 +291,7 @@
   <div class="metro-riga">
     <button type="button" id="mStop" class="metro-stop">■ Stop</button>
     <div class="metro-testi"><b id="mNome"></b><span id="mPosizione"></span><small id="mPoi"></small></div>
+    <b id="mNumero" class="metro-numero" hidden aria-live="off"></b>
     <select id="mTempo" aria-label="Rallentamento"></select>
   </div>
   <div id="mLampo" class="metro-lampo" hidden></div>

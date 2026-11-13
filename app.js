@@ -403,6 +403,7 @@ function aggiornaAnteprima() {
   $('bTonDettaglio').textContent = t.dettaglio;
   $('bTonReale').textContent = t.testoReale;
   $('bScost').textContent = formatoScostamento(d.scostamento);
+  mostraEquivalenza($('bEquivalenza'), d.bpm, d.metro, d.riferimento);
   const b = branoAperto;
   $('bInfo').textContent = b.versione ? (b.stato || 'In prova') + ' · ultima modifica ' + (b.modificatoDa || '') + ' il ' + dataOra(b.modificatoIl) : 'Brano nuovo: si salva appena scrivi il titolo.';
   aggiornaDurate();
@@ -1435,6 +1436,7 @@ async function sistemato(id) {
  * Si ferma uscendo dal brano (non passando a "Leggi tutto il testo"), uscendo dalla schermata Metronomo e
  * quando l'app va in background (decisione B1: meglio fermo che a tempo sbagliato). */
 const metro = Metronomo.crea();
+const bpmTesto = (x) => String(Math.round(x * 10) / 10).replace('.', ',');
 let metroDove = null;          // 'brano' | 'solo' | null
 let metroBrano = null;         // id del brano che sta suonando
 let tempoStudio = 100;         // rallentamento del brano aperto: torna a 100 a ogni apertura
@@ -1482,6 +1484,7 @@ function mostraBarra(dove) {
   $('mTempo').hidden = dove !== 'brano';
   $('mLampo').hidden = !impostazioni().metronomoLampeggio;
   $('mNome').textContent = 'pronto…'; $('mPosizione').textContent = ''; $('mPoi').textContent = '';
+  $('mNumero').hidden = true; $('mNumero').textContent = '';
   riempiTempo();
 }
 function nascondiBarra() {
@@ -1496,28 +1499,50 @@ function avviaMetro(piano, dove, opz) {
     .catch(() => { fermaMetro(); mostra('avvisoCodice', 'Questo telefono non ha aperto l\'audio: tocca di nuovo ▶.', true); });
   metroUltimoMotivo = piano.motivo || '';
 }
+/* Variante T6: il riferimento dice quale nota conta il BPM (come per il tap e le durate). Per non confonderlo
+ * con la suddivisione si scrive il BPM con la sua nota e, se la nota non è il quarto, a cosa corrisponde. */
+const NOTA = { 'Quarti': '♩', 'Ottavi': '♪', 'Quarti puntati': '♩.', 'Minime': 'minima' };
+const notaBpm = (bpm, rif) => (NOTA[rif] || '♩') + ' = ' + bpmTesto(bpm);
+/** "♪ = 138 · ♩ = 69 · battuta 3,5 s"; '' con riferimento Quarti o senza BPM valido. */
+function testoEquivalenza(bpm, metro, rif) {
+  bpm = Number(bpm);
+  if (!rif || rif === 'Quarti' || !(bpm >= Regole.BPM_MIN && bpm <= Regole.BPM_MAX) || !Regole.QUARTI_PER_BATTUTA[metro]) return '';
+  const battiti = Regole.battitiPerBattuta(metro, rif);
+  const quarto = bpm * Regole.QUARTI_PER_BATTUTA[metro] / battiti;
+  return notaBpm(bpm, rif) + ' · ♩ = ' + bpmTesto(quarto) + ' · battuta ' + bpmTesto(battiti * 60 / bpm) + ' s';
+}
+function mostraEquivalenza(dove, bpm, metro, rif) {
+  if (!dove) return;
+  const t = testoEquivalenza(bpm, metro, rif);
+  dove.textContent = t; dove.hidden = !t;
+}
 function fermaMetro() { if (metro.inCorso()) metro.ferma(); else { nascondiBarra(); metroDove = null; metroBrano = null; aggiornaPulsantiMetro(); aggiornaPulsanteSolo(); } }
-const bpmTesto = (x) => String(Math.round(x * 10) / 10).replace('.', ',');
 metro.su('battuta', (a) => {
   const rall = a.tempo < 100 ? ' (' + a.tempo + '%)' : '';
-  if (a.conteggio) { $('mNome').textContent = 'Conteggio'; $('mPosizione').textContent = 'batt. ' + a.battuta + '/' + a.battute; }
+  const tempo = ' · ' + notaBpm(a.bpm, a.riferimento) + rall + ' · ' + a.metro;
+  $('mNumero').hidden = !a.conteggio;
+  if (a.conteggio) { $('mNome').textContent = 'Conteggio'; $('mPosizione').textContent = 'batt. ' + a.battuta + '/' + a.battute + tempo; }
   else if (a.battute === null) {
     $('mNome').textContent = metroDove === 'solo' ? 'Metronomo' : 'Libero';
-    $('mPosizione').textContent = 'batt. ' + a.battuta + ' · ' + bpmTesto(a.bpm) + ' BPM' + rall + ' · ' + a.metro;
+    $('mPosizione').textContent = 'batt. ' + a.battuta + tempo;
   } else {
     // riga 2: battuta e tempo; riga 3 da sola: cosa viene dopo (a 390 px una riga unica veniva tagliata)
     $('mNome').textContent = a.nome;
-    $('mPosizione').textContent = 'batt. ' + a.battuta + '/' + a.battute + (a.giri > 1 ? ' · giro ' + a.giro + '/' + a.giri : '') + ' · ' + bpmTesto(a.bpm) + ' BPM' + rall + ' · ' + a.metro;
+    $('mPosizione').textContent = 'batt. ' + a.battuta + '/' + a.battute + (a.giri > 1 ? ' · giro ' + a.giro + '/' + a.giri : '') + tempo;
   }
-  if (a.conteggio) $('mPosizione').textContent += ' · ' + bpmTesto(a.bpm) + ' BPM' + rall + ' · ' + a.metro;
   $('mPoi').textContent = a.battute === null ? (metroDove === 'brano' ? metroUltimoMotivo : '') : a.conteggio ? 'poi: ' + (a.prossimo ? a.prossimo.nome : '') : a.prossimo ? 'poi: ' + a.prossimo.nome + ' tra ' + a.prossimo.tra + ' batt.' : 'ultima sezione';
   evidenziaInCorso(a.conteggio ? null : a.sezione);
 });
 metro.su('colpo', (c) => {
-  if (!impostazioni().metronomoLampeggio || c.tipo === 'suddivisione') return;
+  // Conteggio (variante T6): il numero 1 2 3 4 sempre; verde (riquadro e striscia) solo con il lampeggio acceso
+  const lampeggio = !!impostazioni().metronomoLampeggio;
+  const num = $('mNumero');
+  if (c.conteggio) { num.textContent = String(c.numero); num.hidden = false; }
+  if (!lampeggio || c.tipo === 'suddivisione') return;
   const l = $('mLampo');
-  l.classList.add('acceso'); l.classList.toggle('uno', c.battito === 1);
-  clearTimeout(timerLampo); timerLampo = setTimeout(() => l.classList.remove('acceso', 'uno'), 90);
+  l.classList.add('acceso'); l.classList.toggle('uno', !c.conteggio && c.battito === 1); l.classList.toggle('conta', !!c.conteggio);
+  if (c.conteggio) num.classList.add('acceso');
+  clearTimeout(timerLampo); timerLampo = setTimeout(() => { l.classList.remove('acceso', 'uno', 'conta'); num.classList.remove('acceso'); }, 90);
 });
 metro.su('fermo', (f) => {
   nascondiBarra(); metroDove = null; metroBrano = null;
@@ -1555,20 +1580,33 @@ function preparaSolo() {
   }
   $('msBpm').value = solo.bpm; $('msMetro').value = solo.metro; $('msRif').value = solo.riferimento; $('msFeel').value = solo.feel;
   $('msTapInfo').textContent = 'Batti a tempo: ' + solo.riferimento.toLowerCase() + ' (almeno 4 tocchi).';
+  aggiornaSolo();
   aggiornaPulsanteSolo();
+}
+/** Suddivisione del metronomo da solo (variante T6): parte dalle Impostazioni, poi vale l'ultima scelta fatta qui. */
+function ottaviSolo() { return solo.ottavi === undefined ? opzioniMetro().ottavi : !!solo.ottavi; }
+function aggiornaSolo() {
+  const giaOttavi = solo.riferimento === 'Ottavi', ott = ottaviSolo();
+  document.querySelectorAll('#msSuddivisione button').forEach((b) => {
+    const premuto = b.dataset.ottavi === '1' ? ott && !giaOttavi : !ott || giaOttavi;
+    b.disabled = giaOttavi; b.classList.toggle('scelto', premuto); b.setAttribute('aria-pressed', String(premuto));
+  });
+  $('msSudInfo').textContent = giaOttavi ? 'già in ottavi' : ott ? 'un colpo più piano tra un battito e l\'altro' : 'solo i battiti';
+  mostraEquivalenza($('msEquivalenza'), solo.bpm, solo.metro, solo.riferimento);
 }
 function aggiornaPulsanteSolo() {
   const s = metro.inCorso() && metroDove === 'solo';
   $('btnAvviaM').textContent = s ? '■ Ferma' : '▶ Avvia';
   $('btnAvviaM').classList.toggle('suona', s);
 }
-function pianoSolo() { return Regole.pianoLibero(solo, opzioniMetro()); }
+function pianoSolo() { return Regole.pianoLibero(solo, Object.assign(opzioniMetro(), { ottavi: ottaviSolo() })); }
 function bpmSolo(v, daTap) {
   v = Math.round(Number(v));
   if (!(v >= Regole.BPM_MIN && v <= Regole.BPM_MAX)) { $('msBpm').classList.add('invalido'); return; }
   $('msBpm').classList.remove('invalido');
   solo.bpm = v; salvaSolo();
   if (!daTap || document.activeElement !== $('msBpm')) $('msBpm').value = v;
+  mostraEquivalenza($('msEquivalenza'), solo.bpm, solo.metro, solo.riferimento);
   if (metro.inCorso() && metroDove === 'solo') metro.cambiaBpm(v);    // dalla battuta successiva
 }
 $('msBpm').addEventListener('input', () => bpmSolo($('msBpm').value));
@@ -1588,8 +1626,13 @@ $('msMetro').addEventListener('change', () => {
 });
 $('msRif').addEventListener('change', () => { solo.riferimento = $('msRif').value; cambioSolo(); });
 $('msFeel').addEventListener('change', () => { solo.feel = $('msFeel').value; cambioSolo(); });
+document.querySelectorAll('#msSuddivisione button').forEach((b) => b.addEventListener('click', () => {
+  solo.ottavi = b.dataset.ottavi === '1'; salvaSolo(); aggiornaSolo();
+  // al volo: stessi battiti, colpi nuovi dalla battuta successiva (niente nuovo conteggio)
+  if (metro.inCorso() && metroDove === 'solo') { const p = pianoSolo(); metro.cambiaColpi(p.tratti[p.tratti.length - 1].colpi); }
+}));
 function cambioSolo() {
-  salvaSolo();
+  salvaSolo(); aggiornaSolo();
   $('msTapInfo').textContent = 'Batti a tempo: ' + solo.riferimento.toLowerCase() + ' (almeno 4 tocchi).';
   if (metro.inCorso() && metroDove === 'solo') avviaMetro(pianoSolo(), 'solo');    // metro o riferimento nuovi: si riparte
 }
