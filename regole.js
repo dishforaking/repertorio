@@ -6,10 +6,12 @@
  *     durata manuale, tap tempo, stati di studio, filtri.
  * T3: struttura a sezioni (tipi, nomi numerati, chi suona, cambi per sezione), durata calcolata,
  *     metro 2/2 e riferimento Minime, feel Dritto / Shuffle.
+ * T5: testi (pulizia, righe di accordi, etichette, blocchi ripetuti e quasi uguali, struttura proposta,
+ *     abbinamento alle sezioni), impostazione "Testi nelle sezioni", avvisi della bacheca.
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 3;
-  var TAPPA = 3;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
+  var VERSIONE_REGOLE = 4;
+  var TAPPA = 5;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
   var MEMBRI = [
@@ -43,6 +45,8 @@ var Regole = (function () {
     { chiave: 'mostraSuonoReale', etichetta: 'Mostra anche il suono reale (accordatura Mib)', tipo: 'si-no', predefinito: false, dalla: 'T2' },
     { chiave: 'battute', etichetta: 'Mostra le battute nelle sezioni', tipo: 'si-no', predefinito: true, dalla: 'T3' },
     { chiave: 'evidenziaSoloMe', etichetta: 'Evidenzia solo la mia parte', tipo: 'si-no', predefinito: false, dalla: 'T3' },
+    // T5 (decisione 3A): VOX li vede completi, gli altri la prima riga (spunto per gli attacchi)
+    { chiave: 'testiSezioni', etichetta: 'Testi nelle sezioni', tipo: 'scelta', valori: ['Completi', 'Prima riga', 'Nascosti'], predefinito: 'Prima riga', perVOX: 'Completi', dalla: 'T5' },
     { chiave: 'metronomoAttivo', etichetta: 'Metronomo attivo', tipo: 'si-no', predefinito: true, dalla: 'T6' },
     { chiave: 'metronomoSuddivisione', etichetta: 'Metronomo: suddivisione', tipo: 'scelta', valori: ['Quarti', 'Ottavi'], predefinito: 'Quarti', dalla: 'T6' },
     { chiave: 'metronomoAccento', etichetta: 'Metronomo: accento sul primo', tipo: 'si-no', predefinito: true, dalla: 'T6' },
@@ -53,9 +57,13 @@ var Regole = (function () {
   ];
   function giaAttiva(d) { return Number(String(d.dalla).replace('T', '')) <= TAPPA; }
 
-  function predefinite() {
+  /** Predefinite; con la sigla VOX alcune cambiano (T5: testi completi). */
+  function predefinite(sigla) {
     var o = {};
-    for (var i = 0; i < IMPOSTAZIONI.length; i++) o[IMPOSTAZIONI[i].chiave] = IMPOSTAZIONI[i].predefinito;
+    for (var i = 0; i < IMPOSTAZIONI.length; i++) {
+      var d = IMPOSTAZIONI[i];
+      o[d.chiave] = sigla === 'VOX' && d.perVOX !== undefined ? d.perVOX : d.predefinito;
+    }
     return o;
   }
 
@@ -69,8 +77,8 @@ var Regole = (function () {
    * Controlla e ripulisce le impostazioni. Restituisce { valori, errori }:
    * i valori non validi tornano al predefinito e finiscono in "errori" (il motore li rifiuta).
    */
-  function normalizzaImpostazioni(dati) {
-    var valori = predefinite(), errori = [];
+  function normalizzaImpostazioni(dati, sigla) {
+    var valori = predefinite(sigla || (dati && dati.membro)), errori = [];
     dati = dati || {};
     for (var i = 0; i < IMPOSTAZIONI.length; i++) {
       var d = IMPOSTAZIONI[i], v = dati[d.chiave];
@@ -450,6 +458,274 @@ var Regole = (function () {
     return (sec > 0 ? '+' : '−') + (a < 60 ? a + ' s' : scriviDurata(a));
   }
 
+  /* ================= T5 · Testi =================
+   * Il testo si scrive DENTRO le sezioni: Sezioni.testo = id di una riga della scheda Testi.
+   * Un ritornello identico è UN solo testo collegato a più sezioni (decisione 1A).
+   * Tutto quello che segue gira sul telefono (schermata di controllo); il motore controlla solo i testi salvati.
+   */
+  var MAX_TESTO = 5000, MAX_TESTI = 40;
+  var LINGUE_OCR = [{ valore: 'it', etichetta: 'Italiano' }, { valore: 'en', etichetta: 'Inglese' }];
+  var SOGLIA_QUASI_UGUALE = 0.8;
+  var GIORNI_NOVITA = 7;
+  /* Caratteri invisibili che arrivano incollando da siti e app (spazio di larghezza zero, BOM…). */
+  var INVISIBILI = new RegExp('[' + String.fromCharCode(0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0x00AD) + ']', 'g');
+  var SPAZI_STRANI = new RegExp('[\t' + String.fromCharCode(0x00A0, 0x2007, 0x202F) + ']', 'g');
+
+  /** A capo di Windows e Mac sistemati, caratteri invisibili tolti, spazi in fondo alle righe tolti. */
+  function testoPulitoBase(t) {
+    return String(vuoto(t) ? '' : t).replace(/\r\n?/g, '\n').replace(INVISIBILI, '').replace(SPAZI_STRANI, ' ')
+      .split('\n').map(function (r) { return r.replace(/\s+$/, ''); }).join('\n');
+  }
+  /** Testo pronto per il foglio: al massimo una riga vuota di fila, niente righe vuote in testa e in coda. */
+  function testoDaSalvare(t) {
+    return testoPulitoBase(t).replace(/\n{3,}/g, '\n\n').replace(/^\s*\n/, '').replace(/\n\s*$/, '').replace(/^\s+|\s+$/g, '');
+  }
+
+  /* Righe di soli accordi (decisione v1: niente accordi sul testo). Radici inglesi e italiane; le italiane
+   * solo maiuscole o con l'iniziale maiuscola, così "la la la" o "mi manchi" restano testo. */
+  var RADICE = '(?:[A-G]|DO|RE|MI|FA|SOL|LA|SI|Do|Re|Mi|Fa|Sol|La|Si)';
+  var ALTERAZ = '(?:#|b|♯|♭)?';
+  var RE_ACCORDO = new RegExp('^\\(?' + RADICE + ALTERAZ + '(?:m|min|maj|M|dim|aug|sus|add|\\+|-|°|ø)?(?:\\d{1,2})?' +
+    '(?:(?:sus|add|maj|b|#|\\+|-)\\d{1,2})*(?:\\/' + RADICE + ALTERAZ + ')?\\)?$');
+  var RE_SEGNO = /^(?:\||\/|-|–|x\d{1,2}|\d{1,2}x|N\.?C\.?|\(|\)|\.{1,3}|%)$/i;
+  function rigaDiAccordi(riga) {
+    var t = String(riga).trim().split(/\s+/), accordi = 0;
+    if (!t[0]) return false;
+    for (var i = 0; i < t.length; i++) {
+      if (RE_ACCORDO.test(t[i])) accordi++;
+      else if (!RE_SEGNO.test(t[i])) return false;
+    }
+    return accordi > 0;
+  }
+
+  /* Etichette dei siti di testi e dei fogli scritti a mano: suggeriscono il tipo e si tolgono dal testo. */
+  var ETICHETTE = [
+    [/^re-?intro$/, 'Re-Intro'], [/^intro$/, 'Intro'],
+    [/^(?:pre-?rit(?:ornello)?|pre-?chorus)$/, 'Pre-rit'],
+    [/^(?:rit(?:ornello)?|chorus|refrain|ritornello finale|final chorus)$/, 'Rit'],
+    [/^(?:strofa|verse|strofe)$/, 'Strofa'], [/^(?:bridge|ponte|middle 8)$/, 'Bridge'],
+    [/^(?:solo|assolo|instrumental|strumentale|interludio|interlude|guitar solo)$/, 'Solo'], [/^stacco$/, 'Stacco'],
+    [/^(?:finale|outro|coda)$/, 'Finale']
+  ];
+  var RE_RIPETI = /^[(\[]?\s*(?:x|×)\s*(\d{1,2})\s*[)\]]?$|^[(\[]?\s*(\d{1,2})\s*(?:x|×)\s*[)\]]?$/i;
+  /** "[Chorus x2]", "Rit.:", "(Strofa 2)", "Pre-chorus" → { tipo, ripetizioni }, oppure null. */
+  function leggiEtichetta(riga) {
+    var s = String(riga).trim().toLowerCase();
+    if (!s || s.length > 32) return null;
+    s = s.replace(/^[\[({<]\s*/, '').replace(/\s*[\])}>]\s*:?$/, '').replace(/\s*:$/, '').trim();
+    var rip = 1, m = /\s*[(\[]?\s*(?:x|×)\s*(\d{1,2})\s*[)\]]?$|\s*[(\[]?\s*(\d{1,2})\s*(?:x|×)\s*[)\]]?$/.exec(s);
+    if (m && m.index > 0) { rip = Number(m[1] || m[2]); s = s.slice(0, m.index).trim(); }
+    s = s.replace(/[.:]+$/, '').replace(/\s+\d{1,2}$/, '').replace(/[.:]+$/, '').trim();
+    for (var i = 0; i < ETICHETTE.length; i++) if (ETICHETTE[i][0].test(s)) return { tipo: ETICHETTE[i][1], ripetizioni: Math.max(1, Math.min(MAX_RIPETIZIONI, rip)) };
+    return null;
+  }
+  var STRUMENTALI = ['Intro', 'Solo', 'Stacco', 'Re-Intro', 'Finale'];
+
+  /** Chiave per confrontare due blocchi: minuscole, senza punteggiatura, spazi semplici. */
+  function chiaveBlocco(t) {
+    return String(t).toLowerCase().replace(/[’']/g, ' ').replace(/[^a-z0-9àáâäèéêëìíîïòóôöùúûüñç\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  /** Somiglianza tra due blocchi (0…1) sulle parole, con la sottosequenza comune più lunga. */
+  function somiglianza(a, b) {
+    var x = chiaveBlocco(a).split(' '), y = chiaveBlocco(b).split(' ');
+    if (!x[0] || !y[0]) return 0;
+    var prec = [], cur = [], i, j;
+    for (j = 0; j <= y.length; j++) prec[j] = 0;
+    for (i = 1; i <= x.length; i++) {
+      cur = [0];
+      for (j = 1; j <= y.length; j++) cur[j] = x[i - 1] === y[j - 1] ? prec[j - 1] + 1 : Math.max(prec[j], cur[j - 1]);
+      prec = cur;
+    }
+    return 2 * prec[y.length] / (x.length + y.length);
+  }
+
+  /**
+   * Analizza un testo incollato, dettato o letto da foto. Restituisce
+   * { blocchi: [{ testo, righe, tipo, daEtichetta, ripetizioni, gruppo, primo, strumentale, quasiUgualeA }],
+   *   accordiTolti, etichette, senzaRigheVuote }.
+   * - blocchi separati dalle righe vuote; righe di soli accordi tolte; etichette usate e tolte;
+   * - due blocchi identici di fila (o "x2") = un blocco ×2; "[Chorus]" da solo = ripete l'ultimo ritornello;
+   *   "[Solo]" da solo = sezione strumentale senza testo;
+   * - gruppo = blocchi identici (stesso testo, decisione 1A); quasiUgualeA = blocco simile di un altro gruppo (2A).
+   */
+  function analizzaTesto(grezzo) {
+    var righe = testoPulitoBase(grezzo).split('\n'), grezzi = [], cur = null, tolte = 0, etichette = 0;
+    var chiudi = function () { if (cur && (cur.righe.length || cur.tipo)) grezzi.push(cur); cur = null; };
+    var nuovo = function (et) { cur = { righe: [], tipo: et ? et.tipo : '', ripetizioni: et ? et.ripetizioni : 1, daEtichetta: !!et }; };
+    for (var i = 0; i < righe.length; i++) {
+      var t = righe[i].trim();
+      if (!t) { chiudi(); continue; }
+      if (rigaDiAccordi(t)) { tolte++; continue; }
+      var rep = RE_RIPETI.exec(t);
+      if (rep) {
+        var n = Math.min(MAX_RIPETIZIONI, Number(rep[1] || rep[2]));
+        if (cur && cur.righe.length) cur.ripetizioni = n; else if (grezzi.length) grezzi[grezzi.length - 1].ripetizioni = n;
+        etichette++; continue;
+      }
+      var et = leggiEtichetta(t);
+      if (et) { chiudi(); nuovo(et); etichette++; continue; }
+      var il = /^([^:]{2,24}):\s*(\S.*)$/.exec(t), eti = il ? leggiEtichetta(il[1]) : null;
+      if (eti) { chiudi(); nuovo(eti); etichette++; t = il[2]; }
+      if (!cur) nuovo(null);
+      cur.righe.push(t);
+    }
+    chiudi();
+    // etichetta sola: ripete un ritornello già visto, oppure è uno strumentale, oppure vale per il blocco dopo
+    var blocchi = [];
+    for (var k = 0; k < grezzi.length; k++) {
+      var g = grezzi[k];
+      if (!g.righe.length) {
+        var gia = null;
+        for (var q = blocchi.length - 1; q >= 0; q--) if (blocchi[q].tipo === g.tipo && blocchi[q].righe.length) { gia = blocchi[q]; break; }
+        if (gia) { blocchi.push({ righe: gia.righe.slice(), tipo: g.tipo, ripetizioni: g.ripetizioni, daEtichetta: true }); continue; }
+        if (STRUMENTALI.indexOf(g.tipo) >= 0) { blocchi.push({ righe: [], tipo: g.tipo, ripetizioni: g.ripetizioni, daEtichetta: true, strumentale: true }); continue; }
+        if (k + 1 < grezzi.length && grezzi[k + 1].righe.length && !grezzi[k + 1].daEtichetta) {
+          grezzi[k + 1].tipo = g.tipo; grezzi[k + 1].daEtichetta = true; grezzi[k + 1].ripetizioni = Math.max(grezzi[k + 1].ripetizioni, g.ripetizioni);
+        }
+        continue;
+      }
+      blocchi.push(g);
+    }
+    // un blocco fatto dello stesso pezzo ripetuto (senza riga vuota in mezzo) = un pezzo ×n
+    blocchi.forEach(function (b) {
+      for (var k = 4; k >= 2; k--) {
+        if (b.strumentale || b.righe.length < 2 * k - 1 || b.righe.length % k) continue;
+        var l = b.righe.length / k, primo = chiaveBlocco(b.righe.slice(0, l).join('\n')), tutti = true;
+        for (var c = 1; c < k; c++) if (chiaveBlocco(b.righe.slice(c * l, (c + 1) * l).join('\n')) !== primo) tutti = false;
+        if (tutti && l >= 1 && primo) { b.righe = b.righe.slice(0, l); b.ripetizioni = Math.min(MAX_RIPETIZIONI, b.ripetizioni * k); break; }
+      }
+    });
+    // due blocchi identici di fila = un blocco ripetuto
+    var uniti = [];
+    blocchi.forEach(function (b) {
+      var u = uniti[uniti.length - 1];
+      if (u && !b.strumentale && !u.strumentale && b.righe.length && chiaveBlocco(b.righe.join('\n')) === chiaveBlocco(u.righe.join('\n')) && (!b.daEtichetta || b.tipo === u.tipo)) {
+        u.ripetizioni = Math.min(MAX_RIPETIZIONI, u.ripetizioni + b.ripetizioni);
+      } else uniti.push(b);
+    });
+    // gruppi di blocchi identici
+    var chiavi = {}, nGruppi = 0, conta = [];
+    uniti.forEach(function (b) {
+      b.testo = b.righe.join('\n');
+      if (b.strumentale) { b.gruppo = -1; return; }
+      var c = chiaveBlocco(b.testo);
+      if (!(c in chiavi)) { chiavi[c] = nGruppi++; conta.push(0); b.primo = true; } else b.primo = false;
+      b.gruppo = chiavi[c]; conta[b.gruppo]++;
+    });
+    // tipo dei blocchi senza etichetta (decisione 6A)
+    var gruppoRit = -1, meglio = 1, lung = -1;
+    uniti.forEach(function (b) { if (b.daEtichetta && b.tipo === 'Rit' && gruppoRit < 0) gruppoRit = b.gruppo; });
+    if (gruppoRit < 0) uniti.forEach(function (b) {
+      if (b.gruppo < 0) return;
+      var n = conta[b.gruppo], l = b.testo.length;
+      if (n > meglio || (n === meglio && n >= 2 && l > lung)) { gruppoRit = b.gruppo; meglio = n; lung = l; }
+    });
+    var posRit = [];
+    uniti.forEach(function (b, i) { if (b.gruppo === gruppoRit && gruppoRit >= 0) posRit.push(i); });
+    var righeRit = posRit.length ? uniti[posRit[0]].righe.length : 0;
+    var bridgeFatto = uniti.some(function (b) { return b.daEtichetta && b.tipo === 'Bridge'; });
+    // quasi uguali (decisione 2A): segnalati, NON uniti
+    uniti.forEach(function (b, i) {
+      b.quasiUgualeA = -1;
+      if (b.gruppo < 0 || !b.primo) return;
+      for (var j = 0; j < i; j++) {
+        var a = uniti[j];
+        if (a.gruppo >= 0 && a.gruppo !== b.gruppo && a.primo && somiglianza(a.testo, b.testo) >= SOGLIA_QUASI_UGUALE) { b.quasiUgualeA = j; break; }
+      }
+    });
+    uniti.forEach(function (b, i) {
+      if (b.daEtichetta || b.strumentale) return;
+      if (b.gruppo === gruppoRit && gruppoRit >= 0) { b.tipo = 'Rit'; return; }
+      // quasi uguale a un ritornello (una parola diversa, un "oh oh" in più): è un ritornello, con il suo testo
+      if (b.quasiUgualeA >= 0 && uniti[b.quasiUgualeA].gruppo === gruppoRit && gruppoRit >= 0) { b.tipo = 'Rit'; return; }
+      var ogniVoltaPrimaDelRit = conta[b.gruppo] >= 2 && uniti.every(function (x, j) { return x.gruppo !== b.gruppo || (j + 1 < uniti.length && uniti[j + 1].gruppo === gruppoRit); });
+      if (ogniVoltaPrimaDelRit && b.righe.length <= Math.max(righeRit, 4)) { b.tipo = 'Pre-rit'; return; }
+      if (!bridgeFatto && conta[b.gruppo] === 1 && posRit.length >= 2 && i > posRit[1]) { b.tipo = 'Bridge'; bridgeFatto = true; return; }
+      b.tipo = 'Strofa';
+    });
+    var conTesto = uniti.filter(function (b) { return !b.strumentale; });
+    return {
+      blocchi: uniti.map(function (b) {
+        return { testo: b.testo, righe: b.righe.length, tipo: b.tipo || 'Strofa', daEtichetta: !!b.daEtichetta, ripetizioni: b.ripetizioni || 1,
+          gruppo: b.gruppo, primo: !!b.primo, strumentale: !!b.strumentale, quasiUgualeA: b.quasiUgualeA };
+      }),
+      accordiTolti: tolte, etichette: etichette,
+      senzaRigheVuote: conTesto.length === 1 && conTesto[0].righe.length > 8
+    };
+  }
+
+  /** Brano SENZA struttura: la struttura proposta dal testo, con i segnaposto Intro / Finale facoltativi. */
+  function proponiStruttura(analisi, opzioni) {
+    opzioni = opzioni || {};
+    var b = (analisi && analisi.blocchi) || [], out = [];
+    if (opzioni.intro && !(b[0] && b[0].tipo === 'Intro')) out.push({ tipo: 'Intro', ripetizioni: 1, blocco: -1 });
+    b.forEach(function (x, i) { out.push({ tipo: x.tipo, ripetizioni: x.ripetizioni, blocco: x.strumentale ? -1 : i }); });
+    if (opzioni.finale && !(b.length && b[b.length - 1].tipo === 'Finale')) out.push({ tipo: 'Finale', ripetizioni: 1, blocco: -1 });
+    return out.slice(0, MAX_SEZIONI);
+  }
+
+  /** Sezioni dove canta la voce: non quelle con VOX tacet, non i Solo e gli Stacchi. */
+  function sezioneCantata(s) {
+    var cs = leggiChiSuona(s && s.chiSuona) || {};
+    return cs.VOX !== 'tacet' && s.tipo !== 'Solo' && s.tipo !== 'Stacco';
+  }
+  /**
+   * Brano CON struttura: per ogni blocco l'id della sezione dove va, oppure 'nuova' (in fondo) o '' (strumentale).
+   * In ordine sulle sezioni cantate; (non ovvio) un blocco cerca una sezione del suo stesso tipo tra le prossime due
+   * cantate (un blocco con l'etichetta, o un Intro / Finale, la cerca fino in fondo), e Intro / Re-Intro / Finale si
+   * usano solo se il blocco è dello stesso tipo: così la prima strofa non finisce sull'Intro quando VOX non è
+   * segnato tacet, e un "[Outro]" va sul Finale anche se prima ci sono altri ritornelli.
+   */
+  function abbinaAStruttura(analisi, sezioni) {
+    var cand = (sezioni || []).filter(sezioneCantata), p = 0, out = [];
+    var bordo = ['Intro', 'Re-Intro', 'Finale'];
+    ((analisi && analisi.blocchi) || []).forEach(function (b) {
+      if (b.strumentale) { out.push(''); return; }
+      var trovata = -1;
+      var fin = b.daEtichetta || bordo.indexOf(b.tipo) >= 0 ? cand.length : Math.min(cand.length, p + 2);
+      for (var j = p; j < fin; j++) if (cand[j].tipo === b.tipo) { trovata = j; break; }
+      if (trovata < 0) for (var k = p; k < cand.length; k++) if (bordo.indexOf(cand[k].tipo) < 0 || cand[k].tipo === b.tipo) { trovata = k; break; }
+      if (trovata < 0) { out.push('nuova'); p = cand.length; return; }
+      out.push(cand[trovata].id); p = trovata + 1;
+    });
+    return out;
+  }
+
+  /** Controlla e ripulisce un testo da salvare. Restituisce { valori: { id, brano, etichetta, testo }, errori }. */
+  function normalizzaTesto(d) {
+    d = d || {};
+    var v = {}, errori = [];
+    v.id = d.id;
+    if (!idValido(d.id)) errori.push('id');
+    v.etichetta = testo(d.etichetta, 40);
+    var t = testoDaSalvare(d.testo);
+    if (!t) errori.push('vuoto');
+    if (t.length > MAX_TESTO) errori.push('lungo');
+    v.testo = t.slice(0, MAX_TESTO);
+    return { valori: v, errori: errori };
+  }
+  /** Prima riga del testo (per la vista "Prima riga" e i testi non collegati). */
+  function primaRiga(t) {
+    var r = String(vuoto(t) ? '' : t).split('\n').filter(function (x) { return x.trim(); });
+    return r.length ? r[0].trim() + (r.length > 1 ? ' …' : '') : '';
+  }
+
+  /* ================= T5 · Avvisi della bacheca ================= */
+  var TIPI_AVVISO = ['struttura dal testo', 'sezioni in fondo', 'testo abbinato', 'nuovo brano'];
+  /** Testo dell'avviso "Da sistemare" (decisione 6A con bacheca). */
+  function testoAvvisoTesto(tipo, nuove) {
+    if (tipo === 'struttura dal testo') return 'La struttura è stata creata dal testo: aggiungi Intro, Solo, Stacchi e battute.';
+    if (tipo === 'sezioni in fondo') return (nuove === 1 ? '1 sezione nuova in fondo' : nuove + ' sezioni nuove in fondo') + ': trascinale al posto giusto.';
+    return 'Controlla che ogni strofa sia nella sezione giusta.';
+  }
+  /** Data "yyyy-MM-ddTHH:mm:ss" di n giorni prima (per gli ultimi 7 giorni), con l'ora del telefono o del motore. */
+  function giorniPrima(adesso, n) {
+    var d = new Date(String(adesso).replace(' ', 'T'));
+    d.setDate(d.getDate() - n);
+    var z = function (x) { return ('0' + x).slice(-2); };
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' + z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds());
+  }
+
   return {
     VERSIONE_REGOLE: VERSIONE_REGOLE,
     TAPPA: TAPPA,
@@ -513,6 +789,27 @@ var Regole = (function () {
     secondiSezione: secondiSezione,
     durataStruttura: durataStruttura,
     durataEffettiva: durataEffettiva,
-    scriviDifferenza: scriviDifferenza
+    scriviDifferenza: scriviDifferenza,
+    MAX_TESTO: MAX_TESTO,
+    MAX_TESTI: MAX_TESTI,
+    LINGUE_OCR: LINGUE_OCR,
+    SOGLIA_QUASI_UGUALE: SOGLIA_QUASI_UGUALE,
+    GIORNI_NOVITA: GIORNI_NOVITA,
+    STRUMENTALI: STRUMENTALI,
+    testoPulitoBase: testoPulitoBase,
+    testoDaSalvare: testoDaSalvare,
+    rigaDiAccordi: rigaDiAccordi,
+    leggiEtichetta: leggiEtichetta,
+    chiaveBlocco: chiaveBlocco,
+    somiglianza: somiglianza,
+    analizzaTesto: analizzaTesto,
+    proponiStruttura: proponiStruttura,
+    sezioneCantata: sezioneCantata,
+    abbinaAStruttura: abbinaAStruttura,
+    normalizzaTesto: normalizzaTesto,
+    primaRiga: primaRiga,
+    TIPI_AVVISO: TIPI_AVVISO,
+    testoAvvisoTesto: testoAvvisoTesto,
+    giorniPrima: giorniPrima
   };
 })();

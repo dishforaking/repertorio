@@ -27,9 +27,15 @@
     <img class="locandina" src="logo/logo-dish-scuro-locandina.svg" alt="Dish for a King">
     <h1 class="gotico" id="saluto">Benvenuto</h1>
     <p class="tenue centro" id="ruolo"></p>
-    <div class="riquadro">
-      <h2>In arrivo</h2>
-      <p class="tenue">Qui compariranno i riquadri <b>Da votare</b> e <b>Novità dall'ultima visita</b> (dalla T4).</p>
+    <div class="riquadro" id="riquadroDaSistemare">
+      <h2>Da sistemare</h2>
+      <ul class="bacheca" id="listaDaSistemare"></ul>
+      <p class="tenue piccolo" id="nienteDaSistemare">Niente da sistemare.</p>
+    </div>
+    <div class="riquadro" id="riquadroNovita">
+      <h2>Ultimi 7 giorni</h2>
+      <ul class="bacheca novita" id="listaNovita"></ul>
+      <p class="tenue piccolo" id="nienteNovita">Nessuna novità negli ultimi 7 giorni.</p>
     </div>
     <div class="riquadro" id="riquadroInstalla" hidden>
       <h2>Installa l'app</h2>
@@ -130,12 +136,20 @@
     </form>
 
     <div class="riquadro" id="riquadroStruttura">
+      <div id="avvisoBrano" hidden></div>
       <div class="testa-struttura"><h2>Struttura</h2><span id="strDurata"></span></div>
       <fieldset id="campiStruttura">
         <ul class="sezioni" id="listaSezioni"></ul>
         <p class="tenue piccolo" id="strVuota" hidden></p>
         <button type="button" id="btnSezione">+ Sezione</button>
+        <button type="button" id="btnTesto" class="secondario">+ Testo (incolla, foto, dettatura)</button>
+        <div id="nonCollegati" hidden>
+          <h3>Testi non collegati</h3>
+          <p class="tenue piccolo">Erano in sezioni eliminate o tolte: ricollegali o eliminali.</p>
+          <ul class="non-collegati" id="listaNonCollegati"></ul>
+        </div>
       </fieldset>
+      <button type="button" id="btnLettura" class="secondario">Leggi tutto il testo</button>
       <div class="esito" id="esitoStruttura" hidden></div>
     </div>
 
@@ -149,9 +163,50 @@
     <div class="esito" id="esitoBrano" hidden></div>
     <div class="riquadro" id="riquadroElimina" hidden>
       <h2>Amministrazione</h2>
-      <p class="tenue">Solo per correggere un errore (fino alla T4, poi si toglie un brano con la proposta).</p>
+      <p class="tenue">Solo l'amministratore elimina un brano: si tolgono anche sezioni, testi, avvisi e stati (resta traccia nello Storico).</p>
       <button type="button" id="btnElimina" class="pericolo" data-testo="Elimina brano">Elimina brano</button>
     </div>
+  </section>
+
+  <section id="vTesto" class="vista" hidden>
+    <button type="button" id="btnTestoIndietro" class="secondario indietro">◀ Scheda brano</button>
+    <h1 class="gotico">Testo</h1>
+    <p class="tenue" id="testoPerBrano"></p>
+    <div id="passoInserisci">
+      <div class="riquadro">
+        <label class="etichetta" for="tGrezzo">Incolla il testo, oppure dettalo con il microfono della tastiera, oppure leggilo da una foto. Le righe vuote dividono le strofe.</label>
+        <textarea id="tGrezzo" rows="12" spellcheck="false" autocapitalize="sentences" placeholder="Strofa…&#10;&#10;Ritornello…"></textarea>
+        <div class="riga-foto">
+          <label class="bottone" for="tFoto">Da foto</label>
+          <input type="file" id="tFoto" accept="image/*" multiple hidden>
+          <select id="tLingua"></select>
+        </div>
+        <p class="tenue piccolo" id="tFotoInfo"></p>
+        <button type="button" id="btnDividi">Dividi in strofe</button>
+        <div class="esito" id="esitoTesto" hidden></div>
+      </div>
+    </div>
+    <div id="passoControllo" hidden>
+      <div class="riquadro">
+        <h2>Controlla prima di confermare</h2>
+        <p class="tenue piccolo" id="tRiepilogo"></p>
+        <p class="nota-rete" id="tAvvisoRighe" hidden>Non ho trovato righe vuote: è tutto un blocco. Torna al testo e lascia una riga vuota tra una strofa e l'altra.</p>
+        <div id="tSegnaposto">
+          <label class="spunta"><input type="checkbox" id="tIntro"> aggiungi un Intro in testa</label>
+          <label class="spunta"><input type="checkbox" id="tFinale"> aggiungi un Finale in coda</label>
+        </div>
+      </div>
+      <ul class="blocchi" id="listaBlocchi"></ul>
+      <button type="button" id="btnConferma">Conferma</button>
+      <button type="button" id="btnModificaTesto" class="secondario">Torna al testo</button>
+      <div class="esito" id="esitoControllo" hidden></div>
+    </div>
+  </section>
+
+  <section id="vLettura" class="vista" hidden>
+    <button type="button" id="btnLetturaIndietro" class="secondario indietro">◀ Scheda brano</button>
+    <h1 class="gotico" id="letturaTitolo"></h1>
+    <div class="lettura" id="letturaTesto"></div>
   </section>
 
   <section id="vImpostazioni" class="vista" hidden>

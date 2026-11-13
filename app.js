@@ -1,8 +1,8 @@
-/* DFAK – Repertorio · comportamento dell'app e chiamate al motore (T2 Repertorio e scheda brano, T3 Struttura a sezioni). */
+/* DFAK – Repertorio · comportamento dell'app e chiamate al motore (T2 Repertorio e scheda brano, T3 Struttura a sezioni, T5 Testi e bacheca). */
 'use strict';
 
-const VERSIONE_INTERFACCIA = 3;   // il motore rifiuta interfacce più vecchie della sua minima
-const MOTORE_MINIMO = 3;          // l'app non scrive su motori più vecchi di questo (T3: salvaStruttura e feel)
+const VERSIONE_INTERFACCIA = 4;   // il motore rifiuta interfacce più vecchie della sua minima
+const MOTORE_MINIMO = 4;          // l'app non scrive su motori più vecchi di questo (T5: testi, foto, bacheca)
 const MOTORE = 'https://script.google.com/macros/s/AKfycbw2kaLgGlfxO5QIcmC1Ax9Ue8z7CBJNdcwpwr9oBsq_P2_MsS5YCIM-9tbfIhgWvWRIuw/exec';
 
 const $ = (id) => document.getElementById(id);
@@ -99,6 +99,10 @@ function aggiornaRete() {
   $('campiStruttura').disabled = fuori || !io();
   $('btnSezione').disabled = fuori || !io() || !branoSalvato();
   if (ordinatore) ordinatore.option('disabled', fuori || !io());
+  // T5: testi e bacheca
+  $('btnTesto').disabled = fuori || !io() || !branoSalvato();
+  $('btnConferma').disabled = fuori;
+  document.querySelectorAll('button.sistemato').forEach((b) => { b.disabled = fuori; });
   if (!fuori) { av.hidden = true; return; }
   const copia = stato.dati;
   av.textContent = (navigator.onLine ? 'Senza rete (motore non raggiungibile)' : 'Senza rete') + ' — dati del ' + (copia ? ora(copia.quando) : '(nessuna copia)') + '. Si può consultare, non modificare.';
@@ -169,8 +173,12 @@ function disegna() {
     : 'Questo telefono ha solo la chiave di amministrazione.';
   if (r && me && !moduloImpostazioniOccupato()) disegnaImpostazioni(r.impostazioni);
   disegnaRepertorio();
+  disegnaBacheca();
   if (!conosciuto) return vai('vNessuno');
+  // T5: mentre si inserisce un testo o si legge, i dati nuovi non portano via dalla schermata
+  if (!$('vTesto').hidden || !$('vLettura').hidden) { aggiornaRete(); return; }
   let corrente = memoria.get('vista') || 'vInizio';
+  if (corrente === 'vTesto' || corrente === 'vLettura') corrente = 'vBrano';
   if (corrente === 'vAdmin' && !stato.admin) corrente = 'vInizio';
   if (corrente === 'vImpostazioni' && !me) corrente = 'vInizio';
   if (corrente === 'vBrano') {
@@ -184,7 +192,7 @@ function disegna() {
 
 function vai(vista) {
   document.querySelectorAll('.vista').forEach((v) => { v.hidden = v.id !== vista; });
-  const voce = vista === 'vBrano' ? 'vRepertorio' : vista;
+  const voce = ['vBrano', 'vTesto', 'vLettura'].includes(vista) ? 'vRepertorio' : vista;
   document.querySelectorAll('#barra button').forEach((b) => b.classList.toggle('attivo', b.dataset.vista === voce));
   $('barra').hidden = vista === 'vNessuno';
   if (vista !== 'vNessuno') memoria.set('vista', vista);
@@ -295,7 +303,7 @@ function nuovoIdBrano() {
 function schedaOccupata() {
   const attivo = document.activeElement;
   return !$('vBrano').hidden && (!!timerBrano || salvataggioInCorso || (attivo && $('moduloBrano').contains(attivo) && attivo.tagName !== 'BUTTON')
-    || !!timerStruttura || strutturaInCorso || editorOccupato());
+    || !!timerStruttura || strutturaInCorso || editorOccupato() || !!timerTesto || testoInCorso);
 }
 function moduloImpostazioniOccupato() { return !!timerSalva; }
 
@@ -427,6 +435,7 @@ async function salvaBrano(tentativo) {
     const lista = brani();
     const i = lista.findIndex((x) => x.id === id);
     if (i >= 0) lista[i] = j.brano; else lista.push(j.brano);
+    if (j.notizia) { const rr = risposta(); rr.avvisi = avvisiTutti().concat([j.notizia]); disegnaBacheca(); }   // T5: "nuovo brano" negli Ultimi 7 giorni
     if (branoAperto && branoAperto.id === id) {
       Object.assign(branoAperto, { versione: j.brano.versione, modificatoDa: j.brano.modificatoDa, modificatoIl: j.brano.modificatoIl, stato: j.brano.stato });
       $('riquadroElimina').hidden = !stato.admin;
@@ -571,7 +580,10 @@ $('btnElimina').addEventListener('click', () => chiediConferma($('btnElimina'), 
     r.brani = r.brani.filter((b) => b.id !== id);
     r.statiStudio = r.statiStudio.filter((s) => s.brano !== id);
     r.sezioni = (r.sezioni || []).filter((s) => s.brano !== id);
+    r.testi = (r.testi || []).filter((s) => s.brano !== id);
+    r.avvisi = (r.avvisi || []).filter((s) => s.brano !== id);
     salvaCopia(); memoria.del('branoAperto'); branoAperto = null;
+    disegnaBacheca();
     vai('vRepertorio'); disegnaRepertorio();
     mostra('avvisoCodice', '');
     statoSalva('eliminato ✓', 'salvato');
@@ -588,7 +600,8 @@ const sezioniTutte = () => { const r = risposta(); return (r && r.sezioni) || []
 let struttura = { brano: null, sezioni: [], conosciute: [], aperta: null };
 let timerStruttura = null, strutturaInCorso = false, strutturaDiNuovo = false, ordinatore = null;
 const ATTESA_STRUTTURA_MS = 1500;
-const CAMPI_SEZIONE = ['id', 'tipo', 'nome', 'ripetizioni', 'battute', 'bpm', 'metro', 'riferimento', 'feel', 'nota', 'chiSuona'];
+// T5: "testo" viaggia con la sezione: il motore lo usa solo per le sezioni nuove (Duplica), per le altre lo cambia salvaTesti
+const CAMPI_SEZIONE = ['id', 'tipo', 'nome', 'ripetizioni', 'battute', 'bpm', 'metro', 'riferimento', 'feel', 'nota', 'chiSuona', 'testo'];
 function copiaSezione(x) {
   const o = {};
   CAMPI_SEZIONE.concat(['versione', 'modificatoDa', 'modificatoIl']).forEach((k) => { o[k] = x[k] === undefined || x[k] === null ? '' : x[k]; });
@@ -665,6 +678,13 @@ function riempiCorpo(corpo, x, nome) {
     corpo.append(chi);
   }
   if (x.nota) corpo.append(el('span', 'nota', x.nota));
+  // T5 (decisione 3A): testo completo, prima riga o niente, secondo l'impostazione personale
+  const t = testoDi(x.testo), modo = imp.testiSezioni || 'Prima riga';
+  if (t && modo !== 'Nascosti') {
+    const i0 = struttura.sezioni.findIndex((q) => q.testo === x.testo);
+    if (i0 >= 0 && struttura.sezioni[i0] !== x) corpo.append(el('span', 'condiviso', '= stesso testo di ' + Regole.nomiSezioni(struttura.sezioni)[i0]));
+    corpo.append(el('span', 'testo-sez' + (modo === 'Prima riga' ? ' prima' : ''), modo === 'Prima riga' ? Regole.primaRiga(t.testo) : t.testo));
+  }
 }
 function aggiornaRigheCompatte() {
   const nomi = Regole.nomiSezioni(struttura.sezioni);
@@ -696,8 +716,10 @@ function disegnaStruttura() {
   });
   const salvato = branoSalvato(), v = $('strVuota');
   v.textContent = !salvato ? 'Prima scrivi il titolo: poi puoi aggiungere le sezioni.'
-    : !n ? (io() ? 'Ancora nessuna sezione: tocca "+ Sezione" (Intro, Strofa, Rit…).' : 'Nessuna sezione.') : '';
+    : !n ? (io() ? 'Ancora nessuna sezione: tocca "+ Sezione" (Intro, Strofa, Rit…) oppure "+ Testo" per crearla dal testo.' : 'Nessuna sezione.') : '';
   v.hidden = !v.textContent;
+  disegnaNonCollegati();
+  disegnaAvvisoBrano();
   preparaOrdinatore();
   aggiornaDurate();
   aggiornaRete();
@@ -706,10 +728,11 @@ function disegnaStruttura() {
 /** Ridisegna la struttura e rimette il cursore nel campo dove si stava scrivendo (stessa sezione, stessa posizione). */
 function disegnaStrutturaTenendoIlCursore() {
   const a = document.activeElement, li = a && a.closest ? a.closest('li.sezione') : null;
-  const dove = li && a.dataset.campo ? { id: li.dataset.id, campo: a.dataset.campo, pos: (() => { try { return a.selectionStart; } catch (e) { return null; } })() } : null;
+  const sel = a && a.dataset ? (a.dataset.campo ? '[data-campo="' + a.dataset.campo + '"]' : a.dataset.testo ? 'textarea[data-testo]' : null) : null;
+  const dove = li && sel ? { id: li.dataset.id, sel, pos: (() => { try { return a.selectionStart; } catch (e) { return null; } })() } : null;
   disegnaStruttura();
   if (!dove) return;
-  const x = document.querySelector('#listaSezioni li[data-id="' + dove.id + '"] [data-campo="' + dove.campo + '"]');
+  const x = document.querySelector('#listaSezioni li[data-id="' + dove.id + '"] ' + dove.sel);
   if (!x) return;
   x.focus();
   try { if (dove.pos !== null && dove.pos !== undefined) x.setSelectionRange(dove.pos, dove.pos); } catch (e) { /* campi numerici: niente posizione */ }
@@ -799,7 +822,7 @@ function editorSezione(x) {
   const chiudi = el('button', 'secondario', 'Chiudi'); chiudi.type = 'button';
   chiudi.addEventListener('click', () => { struttura.aperta = null; disegnaStruttura(); });
   azioni.append(dup, togli, chiudi);
-  box.append(r1, r2, nota, el('span', 'etichetta', 'Chi suona — tocca: tacet, poi ★, poi di nuovo suona'), cs, cambi, azioni);
+  box.append(r1, r2, nota, editorTesto(x), el('span', 'etichetta', 'Chi suona — tocca: tacet, poi ★, poi di nuovo suona'), cs, cambi, azioni);
   // Scrivendo si aggiorna la copia di lavoro e la riga compatta, senza ridisegnare il riquadro sotto le dita
   box.querySelectorAll('[data-campo]').forEach((campo) => {
     campo.addEventListener(campo.tagName === 'SELECT' ? 'change' : 'input', () => {
@@ -935,6 +958,447 @@ async function salvaStruttura(tentativo) {
     strutturaInCorso = false;
     if (strutturaDiNuovo) { strutturaDiNuovo = false; salvaStruttura(0); }
   }
+}
+
+/* ---------- T5 · Testi ----------
+ * Sezioni.testo = id di un testo; un ritornello identico è un solo testo collegato a più sezioni (1A).
+ * Correzioni dal riquadro della sezione (salvate 1,5 s dopo l'ultima lettera); testo nuovo da "+ Testo"
+ * (incolla, foto, dettatura) con la schermata di controllo, che apre l'avviso in bacheca. */
+const testiTutti = () => { const r = risposta(); return (r && r.testi) || []; };
+const avvisiTutti = () => { const r = risposta(); return (r && r.avvisi) || []; };
+const testoDi = (id) => (id ? testiTutti().find((t) => t.id === id) : null);
+const testiDelBrano = (id) => testiTutti().filter((t) => t.brano === id);
+let timerTesto = null, testoInCorso = false, testoDaRisalvare = null;
+
+/** Dopo salvaTesti: testi e sezioni del brano come li ha il motore; la copia di lavoro della struttura si allinea
+ *  (versioni e collegamenti), così il prossimo salvataggio della struttura non vede "modifiche di altri". */
+function applicaRispostaTesti(j) {
+  const r = risposta();
+  r.testi = testiTutti().filter((t) => t.brano !== j.brano).concat(j.testi);
+  r.sezioni = sezioniTutte().filter((x) => x.brano !== j.brano).concat(j.sezioni);
+  if (j.avvisoBacheca) { r.avvisi = avvisiTutti().filter((a) => a.id !== j.avvisoBacheca.id).concat([j.avvisoBacheca]); }
+  salvaCopia();
+  if (struttura.brano === j.brano) {
+    const locali = {}; struttura.sezioni.forEach((x) => { locali[x.id] = x; });
+    j.sezioni.forEach((x) => { if (locali[x.id]) Object.assign(locali[x.id], { testo: x.testo, versione: x.versione, modificatoDa: x.modificatoDa, modificatoIl: x.modificatoIl }); });
+    const k = {}; struttura.conosciute.forEach((c) => { k[c.id] = c; });
+    j.sezioni.forEach((x) => { if (k[x.id]) k[x.id].versione = x.versione; else if (locali[x.id]) struttura.conosciute.push({ id: x.id, versione: x.versione }); });
+  }
+  disegnaBacheca();
+}
+
+/** Sezioni del brano aperto che usano il testo (per "cambia anche in"). */
+function sezioniCon(testoId) {
+  const nomi = Regole.nomiSezioni(struttura.sezioni);
+  return struttura.sezioni.map((x, i) => ({ x, nome: nomi[i] })).filter((o) => o.x.testo === testoId);
+}
+
+/** Correzione di un testo (o primo testo di una sezione): un salvataggio alla volta, l'ultimo vince. */
+function cambioTesto(dati) {
+  clearTimeout(timerTesto); timerTesto = null;
+  if (!puoScrivere('esitoStruttura')) { statoSalva('serve la rete', 'errore'); return; }
+  if (!Regole.testoDaSalvare(dati.testo)) { statoSalva('testo vuoto', 'errore'); mostra('esitoStruttura', 'Il testo è vuoto: non lo salvo. Per toglierlo dalla sezione tocca "Togli il testo".', true); return; }
+  mostra('esitoStruttura', '');
+  statoSalva('salvataggio…');
+  testoDaRisalvare = dati;
+  timerTesto = setTimeout(() => { timerTesto = null; salvaTestoSingolo(0); }, ATTESA_STRUTTURA_MS);
+}
+async function salvaTestoSingolo(tentativo) {
+  if (testoInCorso || !testoDaRisalvare) return;
+  const d = testoDaRisalvare; testoDaRisalvare = null;
+  const t = testoDi(d.id);
+  testoInCorso = true;
+  try {
+    const j = await chiama('salvaTesti', { brano: d.brano, testi: [{ id: d.id, etichetta: '', testo: d.testo, versione: t && t.versione ? t.versione : undefined }], collegamenti: d.sezione ? [{ sezione: d.sezione, testo: d.id }] : [] });
+    if (!j.ok) { statoSalva('non salvato', 'errore'); mostra('esitoStruttura', 'Testo non salvato: ' + j.errore, true); return; }
+    applicaRispostaTesti(j);
+    statoSalva('salvato ✓', 'salvato');
+    if (j.avvisoTesti) mostra('esitoStruttura', 'Attenzione: ' + j.avvisoTesti.modificatoDa + ' aveva modificato questo testo il ' + dataOra(j.avvisoTesti.modificatoIl) + '. Hai salvato la tua versione: controllate insieme.', true);
+    if (!editorOccupato()) disegnaStruttura(); else aggiornaRigheCompatte();
+  } catch (e) {
+    if (e instanceof ErroreRete && tentativo < 2 && navigator.onLine) {
+      testoDaRisalvare = testoDaRisalvare || d; testoInCorso = false;
+      statoSalva('riprovo…'); setTimeout(() => salvaTestoSingolo(tentativo + 1), tentativo ? 5000 : 2000); return;
+    }
+    statoSalva('non salvato: serve la rete', 'errore');
+    mostra('esitoStruttura', 'Testo non salvato: ' + e.message + '. Resta su questa schermata finché non la lasci.', true);
+  } finally {
+    testoInCorso = false;
+    if (testoDaRisalvare && !timerTesto) salvaTestoSingolo(0);
+  }
+}
+
+/** Collegamenti e testi in una chiamata (Rendi indipendente, Togli, Collega, Elimina non collegato). */
+async function salvaCollegamenti(dati, ok) {
+  if (!puoScrivere('esitoStruttura')) return;
+  statoSalva('salvataggio…');
+  try {
+    const j = await chiama('salvaTesti', Object.assign({ brano: struttura.brano }, dati));
+    if (!j.ok) { statoSalva('non salvato', 'errore'); return mostra('esitoStruttura', 'Non salvato: ' + j.errore, true); }
+    applicaRispostaTesti(j);
+    statoSalva('salvato ✓', 'salvato');
+    if (ok) mostra('esitoStruttura', ok);
+    disegnaStruttura();
+  } catch (e) { statoSalva('non salvato', 'errore'); mostra('esitoStruttura', 'Non salvato: ' + e.message, true); }
+}
+
+/** Riquadro "Testo" dentro il riquadro di modifica della sezione. */
+function editorTesto(x) {
+  const box = el('div', 'testo-editor');
+  const t = testoDi(x.testo);
+  box.append(el('span', 'etichetta', 'Testo'));
+  const ta = document.createElement('textarea');
+  ta.dataset.testo = '1'; ta.maxLength = Regole.MAX_TESTO; ta.spellcheck = false; ta.autocapitalize = 'sentences';
+  ta.rows = Math.min(12, Math.max(3, ((t && t.testo) || '').split('\n').length + 1));
+  ta.placeholder = x.versione ? 'Scrivi o detta il testo di questa sezione (microfono della tastiera)' : 'La sezione si sta salvando: tra un attimo puoi scrivere il testo';
+  ta.disabled = !x.versione;
+  ta.value = t ? t.testo : '';
+  let id = t ? t.id : null;
+  ta.addEventListener('input', () => {
+    const nuovo = !id;
+    if (nuovo) id = nuovoIdBrano();
+    let obj = testoDi(id);
+    if (!obj) { obj = { id, brano: struttura.brano, versione: 0, etichetta: '', testo: '' }; risposta().testi = testiTutti().concat([obj]); x.testo = id; }
+    obj.testo = ta.value;
+    aggiornaRigheCompatte();
+    cambioTesto({ id, brano: struttura.brano, testo: ta.value, sezione: nuovo || !obj.versione ? x.id : null });
+  });
+  box.append(ta);
+  const azioni = el('div', 'azioni');
+  if (t) {
+    const altre = sezioniCon(t.id).filter((o) => o.x.id !== x.id);
+    if (altre.length) {
+      box.append(el('p', 'condiviso-info', 'Stesso testo anche in: ' + altre.map((o) => o.nome).join(', ') + '. Correggendolo qui cambia anche lì.'));
+      const ind = el('button', 'secondario', 'Rendi indipendente'); ind.type = 'button';
+      ind.addEventListener('click', () => {
+        const nid = nuovoIdBrano();
+        salvaCollegamenti({ testi: [{ id: nid, etichetta: '', testo: t.testo }], collegamenti: [{ sezione: x.id, testo: nid }] }, 'Ora questa sezione ha un testo suo: puoi cambiarlo senza toccare le altre.');
+      });
+      azioni.append(ind);
+    }
+    const togli = el('button', 'pericolo', 'Togli il testo'); togli.type = 'button'; togli.dataset.testo = 'Togli il testo';
+    togli.addEventListener('click', () => chiediConferma(togli, () => salvaCollegamenti({ collegamenti: [{ sezione: x.id, testo: '' }] }, altre.length ? 'Testo tolto da questa sezione (resta nelle altre).' : 'Testo tolto: lo trovi in fondo, tra i "Testi non collegati".')));
+    azioni.append(togli);
+  } else {
+    const altri = testiDelBrano(struttura.brano);
+    if (altri.length) {
+      const s = document.createElement('select'); s.className = 'usa-testo';
+      s.append(new Option('… oppure usa un testo già scritto', ''));
+      const nomi = Regole.nomiSezioni(struttura.sezioni);
+      altri.forEach((o) => {
+        const dove = struttura.sezioni.map((q, i) => (q.testo === o.id ? nomi[i] : null)).filter(Boolean);
+        s.append(new Option((dove.length ? dove[0] + ': ' : '') + Regole.primaRiga(o.testo), o.id));
+      });
+      s.disabled = !x.versione;
+      s.addEventListener('change', () => { if (s.value) salvaCollegamenti({ collegamenti: [{ sezione: x.id, testo: s.value }] }, 'Collegato: è lo stesso testo, correggendolo cambia ovunque.'); });
+      box.append(s);
+    }
+  }
+  if (azioni.childNodes.length) box.append(azioni);
+  return box;
+}
+
+/** Testi del brano che nessuna sezione usa (5A): si ricollegano o si eliminano. */
+function disegnaNonCollegati() {
+  const box = $('nonCollegati'), ul = $('listaNonCollegati'); ul.textContent = '';
+  if (!struttura.brano) { box.hidden = true; return; }
+  const usati = new Set(struttura.sezioni.map((x) => x.testo).filter(Boolean));
+  const liberi = testiDelBrano(struttura.brano).filter((t) => !usati.has(t.id) && t.versione);
+  box.hidden = !liberi.length;
+  const nomi = Regole.nomiSezioni(struttura.sezioni);
+  liberi.forEach((t) => {
+    const li = el('li');
+    li.append(el('span', 'prima', Regole.primaRiga(t.testo)));
+    const s = document.createElement('select');
+    s.append(new Option('Collega a…', ''));
+    struttura.sezioni.forEach((x, i) => { if (x.versione) s.append(new Option(nomi[i] + (x.testo ? ' (sostituisce il suo)' : ''), x.id)); });
+    s.addEventListener('change', () => { if (s.value) salvaCollegamenti({ collegamenti: [{ sezione: s.value, testo: t.id }] }, 'Testo ricollegato.'); });
+    const b = el('button', 'pericolo', 'Elimina'); b.type = 'button'; b.dataset.testo = 'Elimina';
+    b.addEventListener('click', () => chiediConferma(b, () => salvaCollegamenti({ eliminati: [{ id: t.id, versione: t.versione }] }, 'Testo eliminato (resta traccia nello Storico).')));
+    li.append(s, b); ul.append(li);
+  });
+}
+
+/* ---------- T5 · Inserimento di un testo nuovo: incolla, foto, dettatura → controllo → conferma ---------- */
+let ins = null;   // { brano, analisi, conStruttura, righe: [{ blocco, tipo, ripetizioni, dest }], intro, finale }
+
+function apriInserimento() {
+  if (!branoSalvato() || !puoScrivere('esitoStruttura')) return;
+  if (timerStruttura) { clearTimeout(timerStruttura); timerStruttura = null; salvaStruttura(0); }
+  ins = { brano: branoAperto.id, analisi: null };
+  $('testoPerBrano').textContent = ($('bTitolo').value.trim() || branoAperto.titolo) + (struttura.sezioni.length ? ' · i blocchi andranno nelle sezioni che ci sono già' : ' · la struttura verrà creata dal testo');
+  $('tGrezzo').value = '';
+  $('tFotoInfo').textContent = '';
+  mostra('esitoTesto', ''); mostra('esitoControllo', '');
+  $('passoInserisci').hidden = false; $('passoControllo').hidden = true;
+  const sel = $('tLingua');
+  if (!sel.options.length) Regole.LINGUE_OCR.forEach((l) => sel.append(new Option('Lingua della foto: ' + l.etichetta, l.valore)));
+  sel.value = memoria.get('linguaOcr') || 'it';
+  vai('vTesto');
+}
+$('tLingua').addEventListener('change', () => memoria.set('linguaOcr', $('tLingua').value));
+
+/** Foto ridotta sul telefono (lato lungo 2000 px, JPEG): ~0,5 MB invece di 4–8 MB, si manda anche con poca rete. */
+async function riduciFoto(file) {
+  const img = await createImageBitmap(file);
+  const lato = Math.max(img.width, img.height), k = Math.min(1, 2000 / lato);
+  const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.85));
+  const url = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = ko; fr.readAsDataURL(blob); });
+  return { base64: String(url).split(',')[1], kb: Math.round(blob.size / 1024) };
+}
+$('tFoto').addEventListener('change', async (ev) => {
+  const files = Array.from(ev.target.files || []); ev.target.value = '';
+  if (!files.length) return;
+  if (!puoScrivere('esitoTesto')) return;
+  for (let i = 0; i < files.length; i++) {
+    $('tFotoInfo').textContent = 'Leggo la foto' + (files.length > 1 ? ' ' + (i + 1) + ' di ' + files.length : '') + '…';
+    try {
+      const f = await riduciFoto(files[i]);
+      const j = await chiama('ocr', { base64: f.base64, mime: 'image/jpeg', lingua: $('tLingua').value });
+      if (!j.ok) { $('tFotoInfo').textContent = ''; mostra('esitoTesto', 'Foto non letta (' + (j.dettaglio || j.errore) + '). Riprova o incolla il testo.', true); continue; }
+      const prima = $('tGrezzo').value.replace(/\s+$/, '');
+      $('tGrezzo').value = (prima ? prima + '\n\n' : '') + j.testo;
+      $('tFotoInfo').textContent = 'Foto letta ✓ (' + f.kb + ' KB, ' + (j.msTotale / 1000).toFixed(1) + ' s). Controlla il testo: le righe vuote dividono le strofe. Puoi aggiungere un\'altra pagina.';
+      mostra('esitoTesto', '');
+    } catch (e) { $('tFotoInfo').textContent = ''; mostra('esitoTesto', 'Foto non letta: ' + e.message, true); }
+  }
+});
+
+$('btnDividi').addEventListener('click', () => {
+  const a = Regole.analizzaTesto($('tGrezzo').value);
+  if (!a.blocchi.some((b) => !b.strumentale)) return mostra('esitoTesto', 'Non c\'è testo da dividere.', true);
+  mostra('esitoTesto', '');
+  ins.analisi = a;
+  ins.conStruttura = struttura.brano === ins.brano && struttura.sezioni.length > 0;
+  ins.intro = false; ins.finale = false;
+  if (ins.conStruttura) {
+    const dest = Regole.abbinaAStruttura(a, struttura.sezioni);
+    ins.righe = a.blocchi.map((b, i) => ({ blocco: i, tipo: b.tipo, ripetizioni: b.ripetizioni, dest: dest[i] })).filter((r) => !a.blocchi[r.blocco].strumentale);
+  } else ins.righe = null;
+  $('passoInserisci').hidden = true; $('passoControllo').hidden = false;
+  disegnaControllo();
+  window.scrollTo(0, 0);
+});
+$('btnModificaTesto').addEventListener('click', () => { $('passoInserisci').hidden = false; $('passoControllo').hidden = true; });
+$('btnTestoIndietro').addEventListener('click', () => { ins = null; vai('vBrano'); });
+
+/** Righe della struttura proposta (brano senza struttura), ricalcolate quando cambiano i segnaposto. */
+function righeProposte() {
+  if (!ins.proposte || ins.proposteDa !== String(ins.intro) + ins.finale) {
+    const vecchie = ins.proposte || [];
+    ins.proposte = Regole.proponiStruttura(ins.analisi, { intro: ins.intro, finale: ins.finale }).map((p) => {
+      const v = vecchie.find((q) => q.blocco === p.blocco && q.blocco >= 0);
+      return v ? Object.assign(p, { tipo: v.tipo, ripetizioni: v.ripetizioni }) : p;
+    });
+    ins.proposteDa = String(ins.intro) + ins.finale;
+  }
+  return ins.proposte;
+}
+
+function disegnaControllo() {
+  const a = ins.analisi, ul = $('listaBlocchi'); ul.textContent = '';
+  const info = [a.blocchi.filter((b) => !b.strumentale).length + ' blocchi di testo'];
+  if (a.accordiTolti) info.push('tolte ' + a.accordiTolti + (a.accordiTolti === 1 ? ' riga di accordi' : ' righe di accordi'));
+  if (a.etichette) info.push(a.etichette + (a.etichette === 1 ? ' etichetta usata' : ' etichette usate') + ' (Rit, Strofa, x2…)');
+  $('tRiepilogo').textContent = info.join(' · ') + '.';
+  $('tAvvisoRighe').hidden = !a.senzaRigheVuote;
+  $('tSegnaposto').hidden = ins.conStruttura;
+  $('tIntro').checked = !!ins.intro; $('tFinale').checked = !!ins.finale;
+  const tipoSel = (val, onCambia) => {
+    const s = document.createElement('select'); s.className = 'tipo';
+    Regole.TIPI_SEZIONE.forEach((t) => s.append(new Option(t, t))); s.value = val;
+    s.addEventListener('change', () => onCambia(s.value)); return s;
+  };
+  const passi = (val, onCambia) => {
+    const p = el('div', 'passi');
+    const meno = el('button', 'secondario', '−'); meno.type = 'button'; meno.setAttribute('aria-label', 'una ripetizione in meno');
+    const o = el('output', '', '×' + val);
+    const piu = el('button', 'secondario', '+'); piu.type = 'button'; piu.setAttribute('aria-label', 'una ripetizione in più');
+    meno.addEventListener('click', () => onCambia(Math.max(1, val - 1))); piu.addEventListener('click', () => onCambia(Math.min(Regole.MAX_RIPETIZIONI, val + 1)));
+    p.append(meno, o, piu); return p;
+  };
+  const corpoTesto = (b, i) => {
+    const box = el('div', 'blocco-testo');
+    if (b.strumentale) { box.append(el('span', 'tenue', 'strumentale: nessun testo')); return box; }
+    const prec = a.blocchi.findIndex((x, j) => j < i && x.gruppo === b.gruppo);
+    if (prec >= 0) box.append(el('span', 'uguale', '= stesso testo del blocco ' + (prec + 1)));
+    else box.append(el('pre', '', b.testo));
+    if (b.quasiUgualeA >= 0 && prec < 0) {
+      const q = el('div', 'quasi');
+      q.append(el('span', '', '≈ quasi uguale al blocco ' + (b.quasiUgualeA + 1) + ': lo tengo separato. '));
+      const u = el('button', 'secondario', 'Usa lo stesso testo'); u.type = 'button';
+      u.addEventListener('click', () => { const g = a.blocchi[b.quasiUgualeA].gruppo; a.blocchi.forEach((x) => { if (x.gruppo === b.gruppo) { x.gruppo = g; x.testo = a.blocchi[b.quasiUgualeA].testo; } }); b.quasiUgualeA = -1; disegnaControllo(); });
+      q.append(u); box.append(q);
+    }
+    return box;
+  };
+  if (!ins.conStruttura) {
+    righeProposte().forEach((p, n) => {
+      const li = el('li', 'blocco' + (p.blocco < 0 ? ' segnaposto' : ''));
+      const testa = el('div', 'testa-blocco');
+      testa.append(el('b', 'num', String(n + 1)), tipoSel(p.tipo, (v) => { p.tipo = v; }), passi(p.ripetizioni, (v) => { p.ripetizioni = v; disegnaControllo(); }));
+      li.append(testa, p.blocco >= 0 ? corpoTesto(a.blocchi[p.blocco], p.blocco) : el('div', 'blocco-testo tenue', p.tipo === 'Intro' || p.tipo === 'Finale' ? 'segnaposto senza testo (battute da scrivere)' : 'strumentale: nessun testo'));
+      ul.append(li);
+    });
+  } else {
+    const nomi = Regole.nomiSezioni(struttura.sezioni);
+    ins.righe.forEach((r, n) => {
+      const b = a.blocchi[r.blocco];
+      const li = el('li', 'blocco');
+      const testa = el('div', 'testa-blocco');
+      const s = document.createElement('select'); s.className = 'dest';
+      struttura.sezioni.forEach((x, i) => s.append(new Option('→ ' + nomi[i] + (x.testo ? ' (sostituisce il suo testo)' : ''), x.id)));
+      s.append(new Option('→ Nuova sezione in fondo', 'nuova'));
+      s.append(new Option('→ Non inserire', ''));
+      s.value = r.dest;
+      s.addEventListener('change', () => { r.dest = s.value; disegnaControllo(); });
+      testa.append(el('b', 'num', String(r.blocco + 1)), s);
+      if (r.dest === 'nuova') testa.append(tipoSel(r.tipo, (v) => { r.tipo = v; }), passi(r.ripetizioni, (v) => { r.ripetizioni = v; disegnaControllo(); }));
+      li.append(testa, corpoTesto(b, r.blocco));
+      ul.append(li);
+    });
+  }
+  $('btnConferma').disabled = senzaRete();
+}
+$('tIntro').addEventListener('change', () => { ins.intro = $('tIntro').checked; disegnaControllo(); });
+$('tFinale').addEventListener('change', () => { ins.finale = $('tFinale').checked; disegnaControllo(); });
+
+$('btnConferma').addEventListener('click', async () => {
+  if (!ins || !ins.analisi || !puoScrivere('esitoControllo')) return;
+  const a = ins.analisi, idGruppo = {}, testi = [];
+  const testoDelGruppo = (g) => {
+    if (g < 0) return '';
+    if (!idGruppo[g]) { idGruppo[g] = nuovoIdBrano(); testi.push({ id: idGruppo[g], etichetta: '', testo: a.blocchi.find((b) => b.gruppo === g).testo }); }
+    return idGruppo[g];
+  };
+  const dati = { brano: ins.brano, nuovo: true, testi, collegamenti: [], sezioniNuove: [] };
+  if (!ins.conStruttura) {
+    righeProposte().forEach((p) => dati.sezioniNuove.push({ id: nuovoIdBrano(), tipo: p.tipo, nome: '', ripetizioni: p.ripetizioni, battute: '', testo: p.blocco >= 0 ? testoDelGruppo(a.blocchi[p.blocco].gruppo) : '' }));
+    dati.tipoAvviso = 'struttura dal testo';
+  } else {
+    ins.righe.forEach((r) => {
+      if (!r.dest) return;
+      const id = testoDelGruppo(a.blocchi[r.blocco].gruppo);
+      if (r.dest === 'nuova') dati.sezioniNuove.push({ id: nuovoIdBrano(), tipo: r.tipo, nome: '', ripetizioni: r.ripetizioni, battute: '', testo: id });
+      else dati.collegamenti.push({ sezione: r.dest, testo: id });
+    });
+    dati.tipoAvviso = dati.sezioniNuove.length ? 'sezioni in fondo' : 'testo abbinato';
+  }
+  if (!testi.length && !dati.sezioniNuove.length) return mostra('esitoControllo', 'Non c\'è niente da inserire: scegli almeno una sezione.', true);
+  if (struttura.sezioni.length + dati.sezioniNuove.length > Regole.MAX_SEZIONI) return mostra('esitoControllo', 'Diventerebbero più di ' + Regole.MAX_SEZIONI + ' sezioni: togli qualche blocco.', true);
+  $('btnConferma').disabled = true; statoSalva('salvataggio…'); mostra('esitoControllo', 'Salvo il testo…');
+  try {
+    const j = await chiama('salvaTesti', dati);
+    if (!j.ok) { statoSalva('non salvato', 'errore'); $('btnConferma').disabled = false; return mostra('esitoControllo', 'Non salvato: ' + j.errore, true); }
+    applicaRispostaTesti(j);
+    statoSalva('salvato ✓', 'salvato');
+    const brano = ins.brano; ins = null;
+    if (branoAperto && branoAperto.id === brano) { caricaStruttura(brano); vai('vBrano'); }
+    mostra('esitoStruttura', 'Testo inserito ✓ ' + (j.avvisoBacheca ? j.avvisoBacheca.testo + ' L\'avviso è in bacheca (Inizio) finché qualcuno tocca "Sistemato".' : ''));
+    const r = $('riquadroStruttura'); if (r && r.scrollIntoView) r.scrollIntoView({ block: 'start' });
+  } catch (e) { statoSalva('non salvato', 'errore'); $('btnConferma').disabled = false; mostra('esitoControllo', 'Non salvato: ' + e.message + '. Il testo resta qui.', true); }
+});
+
+/* ---------- T5 · Leggi tutto il testo (sola lettura, anche senza rete) ---------- */
+function apriLettura() {
+  if (!branoAperto) return;
+  $('letturaTitolo').textContent = $('bTitolo').value.trim() || branoAperto.titolo || 'Testo';
+  const box = $('letturaTesto'); box.textContent = '';
+  const nomi = Regole.nomiSezioni(struttura.sezioni);
+  if (!struttura.sezioni.length) box.append(el('p', 'tenue', 'Ancora nessuna sezione.'));
+  struttura.sezioni.forEach((x, i) => {
+    const t = testoDi(x.testo), d = el('div', 'sez-lettura' + (t ? '' : ' senza'));
+    d.append(el('h3', '', nomi[i] + (Number(x.ripetizioni) > 1 ? ' ×' + x.ripetizioni : '')));
+    if (t) d.append(el('p', 'parole', t.testo));
+    box.append(d);
+  });
+  vai('vLettura');
+}
+$('btnLettura').addEventListener('click', apriLettura);
+$('btnLetturaIndietro').addEventListener('click', () => vai('vBrano'));
+$('btnTesto').addEventListener('click', apriInserimento);
+
+/* ---------- T5 · Bacheca: "Da sistemare" e "Ultimi 7 giorni" (decisioni 6A, 7B, 8A) ---------- */
+function adessoLocale() {
+  const d = new Date(), z = (x) => ('0' + x).slice(-2);
+  return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' + z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds());
+}
+/** Chi ha toccato la struttura DOPO l'avviso (solo un aiuto: l'avviso si chiude con "Sistemato"). */
+function modificataDopo(av) {
+  let ultimo = null;
+  sezioniTutte().forEach((x) => { if (x.brano === av.brano && String(x.modificatoIl) > av.apertoIl && (!ultimo || String(x.modificatoIl) > String(ultimo.modificatoIl))) ultimo = x; });
+  return ultimo;
+}
+const avvisiAperti = () => avvisiTutti().filter((a) => !a.chiusoIl && a.tipo !== 'nuovo brano' && brani().some((b) => b.id === a.brano)).sort((a, b) => (a.apertoIl < b.apertoIl ? 1 : -1));
+
+function rigaAvviso(av, conTitolo) {
+  const b = brani().find((x) => x.id === av.brano);
+  const li = el('li', 'avviso-riga'); li.dataset.avviso = av.id;
+  const apri = el('button', 'apri'); apri.type = 'button';
+  if (conTitolo) apri.append(el('b', '', b ? b.titolo : ''));
+  apri.append(el('span', 'cosa', 'Testo aggiunto da ' + av.apertoDa + ' il ' + ora(av.apertoIl) + '. ' + av.testo));
+  const dopo = modificataDopo(av);
+  if (dopo) apri.append(el('span', 'dopo', dopo.modificatoDa + ' ha modificato la struttura dopo l\'avviso (' + ora(dopo.modificatoIl) + ').'));
+  if (conTitolo) apri.addEventListener('click', () => { apriBrano(av.brano); const r = $('riquadroStruttura'); if (r && r.scrollIntoView) r.scrollIntoView({ block: 'start' }); });
+  li.append(apri);
+  if (io()) {
+    const s = el('button', 'sistemato', 'Sistemato'); s.type = 'button';
+    s.disabled = senzaRete();
+    s.addEventListener('click', () => sistemato(av.id));
+    li.append(s);
+  }
+  return li;
+}
+
+function disegnaBacheca() {
+  const ul = $('listaDaSistemare'); if (!ul) return;
+  ul.textContent = '';
+  const aperti = avvisiAperti();
+  aperti.forEach((av) => ul.append(rigaAvviso(av, true)));
+  $('nienteDaSistemare').hidden = aperti.length > 0;
+  // Ultimi 7 giorni: brani nuovi, testi aggiunti, strutture sistemate, con chi (nessuna classifica)
+  const dal = Regole.giorniPrima(adessoLocale(), Regole.GIORNI_NOVITA), voci = [];
+  avvisiTutti().forEach((a) => {
+    const b = brani().find((x) => x.id === a.brano); if (!b) return;
+    if (a.tipo === 'nuovo brano') { if (a.apertoIl >= dal) voci.push({ quando: a.apertoIl, brano: b, testo: 'nuovo brano, aggiunto da ' + a.apertoDa }); return; }
+    if (a.apertoIl >= dal) voci.push({ quando: a.apertoIl, brano: b, testo: 'testo aggiunto da ' + a.apertoDa });
+    if (a.chiusoIl && a.chiusoIl >= dal) voci.push({ quando: a.chiusoIl, brano: b, testo: 'struttura sistemata da ' + a.chiusoDa });
+  });
+  voci.sort((x, y) => (x.quando < y.quando ? 1 : -1));
+  const un = $('listaNovita'); un.textContent = '';
+  voci.slice(0, 15).forEach((v) => {
+    const li = el('li'); const btn = el('button', 'apri'); btn.type = 'button';
+    btn.append(el('b', '', v.brano.titolo), el('span', 'cosa', v.testo + ' · ' + ora(v.quando)));
+    btn.addEventListener('click', () => apriBrano(v.brano.id));
+    li.append(btn); un.append(li);
+  });
+  $('nienteNovita').hidden = voci.length > 0;
+}
+
+/** Stessa riga dell'avviso in cima alla struttura del brano aperto. */
+function disegnaAvvisoBrano() {
+  const box = $('avvisoBrano'); box.textContent = '';
+  const av = branoAperto && avvisiAperti().find((a) => a.brano === branoAperto.id);
+  box.hidden = !av;
+  if (!av) return;
+  const ul = el('ul', 'bacheca'); ul.append(rigaAvviso(av, false)); box.append(ul);
+}
+
+async function sistemato(id) {
+  if (!puoScrivere('avvisoCodice')) return;
+  statoSalva('salvataggio…');
+  try {
+    const j = await chiama('sistemato', { avviso: id });
+    if (!j.ok) { statoSalva('non salvato', 'errore'); return; }
+    const r = risposta();
+    r.avvisi = avvisiTutti().filter((a) => a.id !== id).concat([j.avviso]);
+    salvaCopia();
+    statoSalva(j.gia ? 'già sistemato da ' + j.avviso.chiusoDa : 'salvato ✓', 'salvato');
+    disegnaBacheca();
+    if (branoAperto) disegnaAvvisoBrano();
+  } catch (e) { statoSalva('non salvato', 'errore'); }
 }
 
 /* ---------- Impostazioni personali (salvate sul foglio) ---------- */

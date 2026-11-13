@@ -216,3 +216,52 @@ button { -webkit-tap-highlight-color: transparent; }
   h1 { font-size: 46px; }
   #testa .scritta { height: 40px; }
 }
+
+/* T5 · Testi e bacheca */
+ul.bacheca { list-style: none; padding: 0; margin: 6px 0 0; }
+ul.bacheca li { display: flex; align-items: stretch; gap: 6px; border-bottom: 1px solid var(--linea); padding: 6px 0; }
+ul.bacheca li:last-child { border-bottom: 0; }
+ul.bacheca button.apri { flex: 1; min-width: 0; margin: 0; text-align: left; background: transparent; border: 0; padding: 4px 0; color: var(--testo); min-height: 44px; }
+ul.bacheca button.apri b { display: block; font-size: 16px; }
+ul.bacheca .cosa { font-size: 14px; color: #c9ced8; }
+ul.bacheca .dopo { display: block; font-size: 13px; color: #9fb3ff; margin-top: 2px; }
+ul.bacheca.novita .cosa { color: var(--tenue); }
+ul.bacheca button.sistemato { flex: none; margin: 0; align-self: center; background: transparent; border-color: var(--oro); color: var(--oro); font-weight: 600; }
+#riquadroDaSistemare:has(li) { border-color: var(--rosso); }
+#avvisoBrano { background: #3b1110; border: 1px solid var(--rosso); border-radius: 10px; padding: 2px 10px; margin: 0 0 10px; }
+#avvisoBrano ul.bacheca li { border: 0; }
+button.corpo .testo-sez { display: block; font-size: 15px; color: #f3e6b0; margin-top: 3px; white-space: pre-line; overflow-wrap: anywhere; }
+button.corpo .testo-sez.prima { font-size: 13px; color: #d9cf9f; font-style: italic; white-space: normal; }
+button.corpo .condiviso { display: block; font-size: 12px; color: var(--tenue); margin-top: 2px; }
+.testo-editor textarea { font-size: 16px; line-height: 1.4; }
+.testo-editor .condiviso-info { font-size: 13px; color: #9fb3ff; margin: 4px 0 0; }
+.testo-editor select.usa-testo { margin-top: 6px; font-size: 14px; }
+#btnTesto { font-weight: 600; }
+#nonCollegati h3 { font-size: 15px; margin: 12px 0 2px; }
+ul.non-collegati { list-style: none; padding: 0; margin: 4px 0; }
+ul.non-collegati li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--linea); }
+ul.non-collegati .prima { flex: 1 1 100%; font-style: italic; color: #d9cf9f; overflow-wrap: anywhere; }
+ul.non-collegati select { flex: 1; min-width: 0; font-size: 14px; }
+ul.non-collegati button { margin: 0; }
+#tGrezzo { font-size: 16px; line-height: 1.45; min-height: 14em; }
+.riga-foto { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+label.bottone { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border-radius: 9px; background: var(--blu); border: 1px solid #4a5aa8; color: #fff; cursor: pointer; flex: none; }
+.riga-foto select { flex: 1; min-width: 0; font-size: 14px; }
+label.spunta { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+label.spunta input { width: auto; margin: 0; transform: scale(1.3); accent-color: var(--oro); }
+ul.blocchi { list-style: none; padding: 0; margin: 8px 0; }
+li.blocco { background: var(--carta); border: 1px solid var(--linea); border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; }
+li.blocco.segnaposto { border-style: dashed; }
+.testa-blocco { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.testa-blocco .num { min-width: 1.6em; color: var(--oro); font-size: 18px; }
+.testa-blocco select { flex: 1 1 8em; min-width: 0; font-size: 15px; padding: 8px 6px; }
+.testa-blocco .passi button { min-width: 40px; font-size: 18px; }
+.blocco-testo { margin-top: 6px; font-size: 15px; }
+.blocco-testo pre { font: inherit; white-space: pre-wrap; margin: 0; color: #f3e6b0; overflow-wrap: anywhere; }
+.blocco-testo .uguale { color: #9fb3ff; }
+.blocco-testo .quasi { margin-top: 6px; font-size: 13px; color: #ffcf8a; }
+.blocco-testo .quasi button { margin: 4px 0 0; font-size: 14px; min-height: 36px; padding: 6px 10px; }
+.lettura .sez-lettura { margin: 0 0 16px; }
+.lettura h3 { margin: 0 0 2px; font-size: 15px; color: var(--oro); letter-spacing: .3px; text-transform: uppercase; }
+.lettura .parole { margin: 0; font-size: 22px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; }
+.lettura .senza h3 { color: var(--tenue); }
