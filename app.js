@@ -212,6 +212,7 @@ function disegna() {
 }
 
 function vai(vista) {
+  if (vista !== 'vStampa' && typeof TITOLO_APP !== 'undefined') document.title = TITOLO_APP;   // variante T7: il nome del PDF vale solo nell'anteprima
   if (metro.inCorso() && ((metroDove === 'brano' && !['vBrano', 'vLettura'].includes(vista)) || (metroDove === 'solo' && vista !== 'vMetronomo'))) metro.ferma();
   if (vista === 'vMetronomo') preparaSolo();
   if (vista !== 'vMetronomo') tocchiSolo = [];
@@ -2496,12 +2497,25 @@ function scalaAnteprima() {
 function apriStampa() {
   if (!serataAperta) return;
   vai('vStampa');
+  document.title = nomeFileStampa(serataAperta);
   costruisciFoglio();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (!$('vStampa').hidden) costruisciFoglio(); });
 }
 $('btnAnteprima').addEventListener('click', apriStampa);
 $('btnStampaIndietro').addEventListener('click', () => vai('vSerata'));
-$('btnStampa').addEventListener('click', () => window.print());
+/**
+ * Variante T7 (15/11/2026, scelta A): il nome proposto da "Salva come PDF" è il titolo della pagina, quindi
+ * nell'anteprima il titolo diventa "2026-12-12 Bar Test - Scaletta Dish for a King" (data prima: i file si
+ * ordinano da soli per serata). Senza i caratteri vietati nei nomi dei file.
+ * (non ovvio) Il titolo resta finché si è nell'anteprima e torna uscendo, non all'evento "afterprint":
+ * su Android la stampa non blocca la pagina e "afterprint" può arrivare prima che il sistema legga il nome.
+ */
+const TITOLO_APP = 'Dish for a King';
+function nomeFileStampa(s) {
+  const locale = String((s && s.locale) || '').replace(/[\/\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+  return [(s && s.data) || '', locale].filter(Boolean).join(' ') + ' - Scaletta Dish for a King';
+}
+$('btnStampa').addEventListener('click', () => { if (serataAperta) document.title = nomeFileStampa(serataAperta); window.print(); });
 window.addEventListener('resize', () => { if (!$('vStampa').hidden) scalaAnteprima(); });
 
 /* ---------- Partenza: subito dalla copia sul telefono, poi una chiamata ---------- */
