@@ -33,6 +33,7 @@ const chiaveAdmin = () => memoria.get('chiaveAdmin');
 const stato = {
   app: '…', motore: memoria.get('motore') || '…',
   dati: memoria.get('dati'),     // ultima copia ricevuta dal motore: { risposta, quando }
+  // (collaudo T8) il metro arrivato come data ("2026-04-03T22:00:00.000Z") torna "4/4": vedi sistemaCopia
   admin: false,
   membriAdmin: null
 };
@@ -41,7 +42,10 @@ const io = () => { const r = risposta(); return r && r.io; };
 const brani = () => { const r = risposta(); return (r && r.brani) || []; };
 const statiStudio = () => { const r = risposta(); return (r && r.statiStudio) || []; };
 function impostazioni() { const r = risposta(); return (r && r.impostazioni) || Regole.predefinite(); }
-function salvaCopia() { if (stato.dati) memoria.set('dati', stato.dati); }
+/** (collaudo T8) Il foglio aveva trasformato "4/4" in una data: si rimette a posto ogni copia, prima di usarla e di salvarla. */
+function sistemaCopia() { if (stato.dati && stato.dati.risposta) Regole.sistemaMetri(stato.dati.risposta); }
+sistemaCopia();   // la copia già sul telefono (anche senza rete) guarisce subito
+function salvaCopia() { sistemaCopia(); if (stato.dati) memoria.set('dati', stato.dati); }
 
 /* ---------- Chiamate al motore ---------- */
 class ErroreRete extends Error {}

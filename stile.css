@@ -401,7 +401,8 @@ body.in-palco main { max-width: 760px; padding: 0 10px; }
 .palco-conta { font-size: calc(var(--fp) * 1.1); color: #7fd27f; min-width: 1.2em; text-align: center; }
 #pInfo { color: var(--oro); font-weight: 700; font-size: calc(var(--fp) * .6); margin-top: 2px; }
 #pNota { font-style: italic; font-size: calc(var(--fp) * .5); margin: 2px 0 0; }
-#pModo { color: var(--tenue); font-size: 14px; margin: 2px 0 0; }
+/* (collaudo T8) una riga sola: il motivo non deve mai rubare spazio alle sezioni */
+#pModo { color: var(--tenue); font-size: 14px; margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .palco-speciale { color: var(--oro); font-weight: 700; text-align: center; font-size: calc(var(--fp) * .55); margin: 10px 0; }
 .palco-sezioni { list-style: none; padding: 0; margin: 8px 0; }
 .palco-sezioni li { background: var(--carta); border: 1px solid var(--linea); border-radius: 10px; padding: 6px 10px; margin: 6px 0; font-size: calc(var(--fp) * .5); scroll-margin-top: var(--alto-testa, 120px); cursor: pointer; }

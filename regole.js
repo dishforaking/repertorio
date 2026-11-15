@@ -12,9 +12,10 @@
  *     rallentamento; durata del piano).
  * T7: serate e scaletta (righe brano / pausa / bis / libera, set e orari, riga del foglio stampato).
  * T8: Modalità Palco (piano del palco dal piano del metronomo, sezione al tempo, "poi:" per almeno 2 s) e file per la serata.
+ *     Correzione del collaudo T8 (v8): il foglio trasforma "4/4" in una data; metroLetto lo riporta a "4/4".
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 7;
+  var VERSIONE_REGOLE = 8;
   var TAPPA = 8;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
@@ -182,6 +183,49 @@ var Regole = (function () {
 
   /* ================= Brano ================= */
   var METRI = ['4/4', '3/4', '2/4', '2/2', '6/8', '12/8'];
+  /**
+   * (non ovvio, collaudo T8) La colonna "metro" del foglio non era in testo semplice: Google Fogli ha trasformato
+   * "4/4" nella data 4 aprile. Arriva come "2026-04-03T22:00:00.000Z" (mezzanotte di Roma in UTC), come data
+   * scritta per esteso ("Sat Apr 04 2026 00:00:00 GMT+0200…") o come oggetto Date.
+   * Si prende giorno e mese (arrotondando al giorno più vicino, così il fuso non sposta la data) e si prova
+   * giorno/mese e mese/giorno: per i 6 metri ammessi uno solo dei due è valido (4/3, 8/6, 8/12, 4/2 non esistono).
+   * Vuoto resta vuoto; un valore che non si riconosce resta com'è (lo segnala chi lo usa).
+   */
+  var MESI_EN = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+  function metroLetto(v) {
+    if (v === null || v === undefined || v === '') return '';
+    var s = typeof v === 'string' ? v.trim() : v, g = 0, m = 0;
+    if (typeof s === 'string' && METRI.indexOf(s) >= 0) return s;
+    if (typeof s === 'string') {
+      var lunga = /^[A-Z][a-z]{2} ([A-Z][a-z]{2}) (\d{1,2}) \d{4}/.exec(s);   // String(Date) di Apps Script
+      if (lunga && MESI_EN[lunga[1]]) { m = MESI_EN[lunga[1]]; g = Number(lunga[2]); }
+      else if (/^\d{4}-\d{2}-\d{2}T/.test(s)) s = new Date(s);
+      else return s;
+    }
+    if (!m && s && typeof s.getTime === 'function') {   // un Date (anche di un altro contesto)
+      var t = s.getTime();
+      if (isNaN(t)) return String(v);
+      var d = new Date(t + 12 * 3600 * 1000);   // mezzanotte in un fuso tra −12 e +12 → stesso giorno in UTC
+      m = d.getUTCMonth() + 1; g = d.getUTCDate();
+    }
+    if (!m) return String(v);
+    if (METRI.indexOf(g + '/' + m) >= 0) return g + '/' + m;
+    if (METRI.indexOf(m + '/' + g) >= 0) return m + '/' + g;
+    return String(v);
+  }
+  /** Ripulisce in place brani e sezioni di una risposta del motore (o della copia sul telefono). Restituisce quanti ne ha sistemati. */
+  function sistemaMetri(r) {
+    var n = 0;
+    if (!r) return 0;
+    [r.brani, r.sezioni].forEach(function (lista) {
+      (lista || []).forEach(function (x) {
+        if (!x || x.metro === undefined) return;
+        var giusto = metroLetto(x.metro);
+        if (giusto !== x.metro) { x.metro = giusto; n++; }
+      });
+    });
+    return n;
+  }
   var RIFERIMENTI = ['Quarti', 'Ottavi', 'Quarti puntati', 'Minime'];
   /* T3 (decisione 2): il feel non cambia la durata; servirà al metronomo della T6 (ottavi terzinati). */
   var FEEL = ['Dritto', 'Shuffle'];
@@ -417,7 +461,7 @@ var Regole = (function () {
     sez = sez || {}; brano = brano || {};
     return {
       bpm: !vuoto(sez.bpm) ? Number(sez.bpm) : (vuoto(brano.bpm) ? '' : Number(brano.bpm)),
-      metro: sez.metro || brano.metro || '4/4',
+      metro: metroLetto(sez.metro) || metroLetto(brano.metro) || '4/4',
       riferimento: sez.riferimento || brano.riferimento || 'Quarti',
       feel: sez.feel || brano.feel || 'Dritto'
     };
@@ -807,18 +851,22 @@ var Regole = (function () {
    */
   function pianoMetronomo(brano, sezioni, opzioni) {
     brano = brano || {}; sezioni = sezioni || []; opzioni = opzioni || {};
-    var tempoBrano = { bpm: brano.bpm, metro: brano.metro || '4/4', riferimento: brano.riferimento || 'Quarti', feel: brano.feel || 'Dritto' };
+    var tempoBrano = { bpm: brano.bpm, metro: metroLetto(brano.metro) || '4/4', riferimento: brano.riferimento || 'Quarti', feel: brano.feel || 'Dritto' };
     if (!sezioni.length) return pianoLibero(tempoBrano, opzioni, 'libero: il brano non ha ancora una struttura');
-    var nomi = nomiSezioni(sezioni), senzaBattute = [], senzaBpm = [], nonIntere = [];
+    var nomi = nomiSezioni(sezioni), senzaBattute = [], senzaBpm = [], nonIntere = [], senzaMetro = [];
     sezioni.forEach(function (s, i) {
       var t = tempoSezione(s, brano);
       if (vuoto(s.battute) || !(Number(s.battute) > 0)) senzaBattute.push(nomi[i]);
       else if (!(t.bpm > 0)) senzaBpm.push(nomi[i]);
+      else if (!QUARTI_PER_BATTUTA[t.metro]) senzaMetro.push(nomi[i]);
       else if (!battitiInteri(t.metro, t.riferimento)) nonIntere.push(nomi[i] + ' (' + t.metro + ' a ' + t.riferimento.toLowerCase() + ')');
     });
-    if (senzaBattute.length) return pianoLibero(tempoBrano, opzioni, 'libero: mancano le battute in ' + senzaBattute.join(', '));
-    if (senzaBpm.length) return pianoLibero(tempoBrano, opzioni, 'libero: manca il BPM in ' + senzaBpm.join(', '));
-    if (nonIntere.length) return pianoLibero(tempoBrano, opzioni, 'libero: battute non intere in ' + nonIntere.join(', '));
+    // (collaudo T8) "mancanza" dice al palco cosa manca e dove, per scriverlo in una riga sola
+    var conMancanza = function (p, cosa, lista) { p.mancanza = { cosa: cosa, sezioni: lista.map(function (x) { return x.replace(/ \(.*\)$/, ''); }), totale: sezioni.length }; return p; };
+    if (senzaBattute.length) return conMancanza(pianoLibero(tempoBrano, opzioni, 'libero: mancano le battute in ' + senzaBattute.join(', ')), 'mancano le battute', senzaBattute);
+    if (senzaBpm.length) return conMancanza(pianoLibero(tempoBrano, opzioni, 'libero: manca il BPM in ' + senzaBpm.join(', ')), 'manca il BPM', senzaBpm);
+    if (senzaMetro.length) return conMancanza(pianoLibero(tempoBrano, opzioni, 'libero: metro non riconosciuto in ' + senzaMetro.join(', ')), 'metro non riconosciuto', senzaMetro);
+    if (nonIntere.length) return conMancanza(pianoLibero(tempoBrano, opzioni, 'libero: battute non intere in ' + nonIntere.join(', ')), 'battute non intere', nonIntere);
     var da = 0;
     sezioni.forEach(function (s, i) { if (opzioni.daSezione && s.id === opzioni.daSezione) da = i; });
     var tratti = [];
@@ -1097,10 +1145,19 @@ var Regole = (function () {
    * Con "mano" (struttura incompleta, senza BPM) la sezione si sposta solo a mano, e il motivo lo dice.
    * opzioni: come il metronomo ({ daSezione, conteggio }).
    */
+  /**
+   * (collaudo T8) Il motivo del palco "a mano" sta in una riga: mai valori grezzi, al massimo 3 nomi.
+   * "mancano le battute in Solo, Finale" · "mancano le battute in 5 sezioni" · "metro non riconosciuto in tutte le sezioni".
+   */
+  function motivoBreve(x) {
+    var n = x.sezioni.length;
+    var dove = n >= x.totale && n > 1 ? 'tutte le sezioni' : n > 3 ? n + ' sezioni' : x.sezioni.join(', ');
+    return x.cosa + ' in ' + dove;
+  }
   function pianoPalco(brano, sezioni, opzioni) {
     var p = pianoMetronomo(brano, sezioni, opzioni || {});
     if (p.modo !== 'struttura') {
-      var motivo = p.modo === 'nessuno' ? 'scrivi il BPM del brano' : String(p.motivo || '').replace(/^libero: /, '');
+      var motivo = p.modo === 'nessuno' ? 'scrivi il BPM del brano' : p.mancanza ? motivoBreve(p.mancanza) : String(p.motivo || '').replace(/^libero: /, '');
       return { modo: 'mano', motivo: 'scorrimento a mano' + (motivo ? ': ' + motivo : ''), conteggio: 0, sezioni: [], durata: null };
     }
     var t = 0, cont = 0, out = [];
@@ -1353,6 +1410,9 @@ var Regole = (function () {
     vociPalco: vociPalco,
     scriviRigaSpeciale: scriviRigaSpeciale,
     pianoPalco: pianoPalco,
+    metroLetto: metroLetto,
+    sistemaMetri: sistemaMetri,
+    motivoBreve: motivoBreve,
     sezioneAlTempo: sezioneAlTempo,
     nomeFileSerata: nomeFileSerata,
     fileSerata: fileSerata
