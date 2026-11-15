@@ -1,7 +1,7 @@
 /* DFAK – Repertorio: memoria offline e numero di versione dell'app.
  * Per pubblicare una nuova versione si cambia VERSIONE (e si caricano i file cambiati).
  * Tutto ciò che si salva usa il prefisso "dfak-" e vale solo per la cartella /repertorio/. */
-const VERSIONE = '7';
+const VERSIONE = '8';
 const PREFISSO = 'dfak-repertorio-';
 const CACHE = PREFISSO + 'v' + VERSIONE;
 const FILE = [
@@ -18,6 +18,7 @@ const FILE = [
   'icone/icona-maskable-512.png',
   'logo/logo-dish-scuro-scritta.svg',
   'logo/logo-dish-scuro-locandina.svg',
+  'logo/logo-dish-chiaro-scritta.svg',   // T7: foglio stampato della scaletta (anche senza rete)
   'caratteri/grenze-gotisch.woff2'
 ];
 

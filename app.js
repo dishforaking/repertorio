@@ -1,9 +1,9 @@
 /* DFAK – Repertorio · comportamento dell'app e chiamate al motore (T2 Repertorio e scheda brano, T3 Struttura a sezioni, T5 Testi e bacheca,
- * T6 Metronomo e schermo sempre acceso). */
+ * T6 Metronomo e schermo sempre acceso, T7 Serate, scaletta e stampa). */
 'use strict';
 
-const VERSIONE_INTERFACCIA = 4;   // il motore rifiuta interfacce più vecchie della sua minima
-const MOTORE_MINIMO = 4;          // l'app non scrive su motori più vecchi di questo (T5: testi, foto, bacheca)
+const VERSIONE_INTERFACCIA = 5;   // il motore rifiuta interfacce più vecchie della sua minima
+const MOTORE_MINIMO = 5;          // l'app non scrive su motori più vecchi di questo (T7: serate e scaletta)
 const MOTORE = 'https://script.google.com/macros/s/AKfycbw2kaLgGlfxO5QIcmC1Ax9Ue8z7CBJNdcwpwr9oBsq_P2_MsS5YCIM-9tbfIhgWvWRIuw/exec';
 
 const $ = (id) => document.getElementById(id);
@@ -104,6 +104,15 @@ function aggiornaRete() {
   $('btnTesto').disabled = fuori || !io() || !branoSalvato();
   $('btnConferma').disabled = fuori;
   document.querySelectorAll('button.sistemato').forEach((b) => { b.disabled = fuori; });
+  // T7: serate e scaletta (senza rete si leggono e si stampano)
+  $('campiSerata').disabled = fuori || !io();
+  $('campiScaletta').disabled = fuori || !io() || !(serataSalvata() || scal.righe.length);
+  if (ordinatoreScaletta) ordinatoreScaletta.option('disabled', fuori || !io());
+  $('btnNuovaSerata').disabled = fuori;
+  $('btnDuplica').disabled = fuori || !io() || !serataSalvata();
+  $('btnDuplica').hidden = !io();
+  $('btnEliminaSerata').disabled = fuori;
+  $('btnScegliOk').disabled = fuori || !scelti.length;
   if (!fuori) { av.hidden = true; return; }
   const copia = stato.dati;
   av.textContent = (navigator.onLine ? 'Senza rete (motore non raggiungibile)' : 'Senza rete') + ' — dati del ' + (copia ? ora(copia.quando) : '(nessuna copia)') + '. Si può consultare, non modificare.';
@@ -175,15 +184,24 @@ function disegna() {
   if (r && me && !moduloImpostazioniOccupato()) disegnaImpostazioni(r.impostazioni);
   disegnaRepertorio();
   disegnaBacheca();
+  disegnaSerate();
   if (!conosciuto) return vai('vNessuno');
-  // T5: mentre si inserisce un testo o si legge, i dati nuovi non portano via dalla schermata
-  if (!$('vTesto').hidden || !$('vLettura').hidden) { aggiornaRete(); return; }
+  // T5: mentre si inserisce un testo o si legge, i dati nuovi non portano via dalla schermata (T7: idem scelta brani e anteprima)
+  if (!$('vTesto').hidden || !$('vLettura').hidden || !$('vScegli').hidden || !$('vStampa').hidden) { aggiornaRete(); return; }
   let corrente = memoria.get('vista') || 'vInizio';
   if (corrente === 'vTesto' || corrente === 'vLettura') corrente = 'vBrano';
   if (corrente === 'vAdmin' && !stato.admin) corrente = 'vInizio';
   if (corrente === 'vImpostazioni' && !me) corrente = 'vInizio';
   $('navMetronomo').hidden = !metroAttivo();
   if (corrente === 'vMetronomo' && !metroAttivo()) corrente = 'vInizio';
+  if (corrente === 'vScegli' || corrente === 'vStampa') corrente = 'vSerata';
+  if (corrente === 'vSerata') {
+    if (scalettaOccupata()) { aggiornaRete(); return; }    // si sta scrivendo: non si ridisegna sotto le dita
+    const ids = memoria.get('serataAperta');
+    if (serataAperta && serataAperta.id === ids && !serataSalvata()) { aggiornaRete(); return; }   // nuova o copia non ancora salvata
+    if (ids && serateTutte().some((s) => s.id === ids)) { apriSerata(ids, true); return; }
+    corrente = 'vSerate';
+  }
   if (corrente === 'vBrano') {
     if (schedaOccupata()) { aggiornaRete(); return; }      // si sta scrivendo: non si ridisegna sotto le dita
     const id = memoria.get('branoAperto');
@@ -198,8 +216,10 @@ function vai(vista) {
   if (vista === 'vMetronomo') preparaSolo();
   if (vista !== 'vMetronomo') tocchiSolo = [];
   document.querySelectorAll('.vista').forEach((v) => { v.hidden = v.id !== vista; });
-  const voce = ['vBrano', 'vTesto', 'vLettura'].includes(vista) ? 'vRepertorio' : vista;
+  const voce = ['vBrano', 'vTesto', 'vLettura'].includes(vista) ? 'vRepertorio' : ['vSerata', 'vScegli', 'vStampa'].includes(vista) ? 'vSerate' : vista;
   document.querySelectorAll('#barra button').forEach((b) => b.classList.toggle('attivo', b.dataset.vista === voce));
+  $('btnImpostazioni').classList.toggle('attivo', vista === 'vImpostazioni');   // T7 (decisione 2B): le impostazioni sono la ⚙ in testata
+  if (!['vBrano', 'vTesto', 'vLettura'].includes(vista)) tornaSerata = null;
   $('barra').hidden = vista === 'vNessuno';
   if (vista !== 'vNessuno') memoria.set('vista', vista);
   if (vista === 'vAdmin') caricaMembriAdmin();
@@ -207,7 +227,7 @@ function vai(vista) {
   aggiornaRete();
   window.scrollTo(0, 0);
 }
-document.querySelectorAll('#barra button').forEach((b) => b.addEventListener('click', () => vai(b.dataset.vista)));
+document.querySelectorAll('#barra button, #btnImpostazioni').forEach((b) => b.addEventListener('click', () => vai(b.dataset.vista)));
 
 /* ---------- Repertorio: elenco, filtri, matrice ---------- */
 const CLASSE_STATO = { 'Da studiare': 's0', 'In studio': 's1', 'Da ripassare': 's2', 'Lo so': 's3' };
@@ -338,6 +358,8 @@ function apriBrano(id, daRidisegno) {
   }
   branoAperto = b ? Object.assign({}, b) : { id: nuovoIdBrano(), versione: 0, titolo: '', artista: '', tonalitaOriginale: '', scostamento: 0, accordatura: 'Mib', bpm: '', riferimento: 'Quarti', metro: '4/4', feel: 'Dritto', durataManuale: '', note: '', stato: 'In prova' };
   memoria.set('branoAperto', branoAperto.id);
+  if (!daRidisegno) { tornaSerata = prossimoTorna; prossimoTorna = null; }   // T7: aperto dalla scaletta
+  $('btnIndietro').textContent = tornaSerata ? '◀ Serata' : '◀ Repertorio';
   riempiScelte();
   $('bTitolo').value = branoAperto.titolo;
   $('bArtista').value = branoAperto.artista;
@@ -522,6 +544,7 @@ $('btnTap').addEventListener('pointerdown', (ev) => {
 $('btnIndietro').addEventListener('click', () => {
   if (timerBrano) { clearTimeout(timerBrano); timerBrano = null; salvaBrano(0); }   // salva subito ciò che era in attesa
   if (timerStruttura) { clearTimeout(timerStruttura); timerStruttura = null; salvaStruttura(0); }
+  if (tornaSerata && serateTutte().some((s) => s.id === tornaSerata)) { const s = tornaSerata; tornaSerata = null; return apriSerata(s); }
   vai('vRepertorio');
 });
 $('btnNuovo').addEventListener('click', () => { if (puoScrivere('esitoBrano')) apriBrano(null); else mostra('repVuoto', 'Serve la rete per aggiungere un brano.', true); });
@@ -592,6 +615,7 @@ $('btnElimina').addEventListener('click', () => chiediConferma($('btnElimina'), 
     r.brani = r.brani.filter((b) => b.id !== id);
     r.statiStudio = r.statiStudio.filter((s) => s.brano !== id);
     r.sezioni = (r.sezioni || []).filter((s) => s.brano !== id);
+    r.scalette = (r.scalette || []).filter((s) => s.brano !== id);   // T7: il motore lo toglie anche dalle scalette
     r.testi = (r.testi || []).filter((s) => s.brano !== id);
     r.avvisi = (r.avvisi || []).filter((s) => s.brano !== id);
     salvaCopia(); memoria.del('branoAperto'); branoAperto = null;
@@ -1906,6 +1930,579 @@ $('btnInstalla').addEventListener('click', async () => {
   richiestaInstallazione = null; $('riquadroInstalla').hidden = true;
 });
 window.addEventListener('appinstalled', () => { $('riquadroInstalla').hidden = true; });
+
+/* ---------- T7 · Serate, scaletta e stampa ----------
+ * Serata: si salva appena c'è la data (come il brano con il titolo). Scaletta: copia di lavoro salvata TUTTA
+ * insieme 1,5 s dopo l'ultima modifica, con le righe che il telefono conosceva (unione nel motore, come la struttura).
+ * Righe: brano, pausa (minuti), bis, riga libera (testo + minuti facoltativi). Durate solo musica (decisione 1A). */
+const serateTutte = () => { const r = risposta(); return (r && r.serate) || []; };
+const scaletteTutte = () => { const r = risposta(); return (r && r.scalette) || []; };
+const righeDi = (serataId) => scaletteTutte().filter((x) => x.serata === serataId).sort((a, b) => a.ordine - b.ordine);
+function oggiLocale() { const d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+let serataAperta = null;       // copia di lavoro { id, versione, data, locale, orario, note } (versione 0 = non salvata)
+let scal = { serata: null, righe: [], conosciute: [], aperta: null };
+let timerSerata = null, serataInCorso = false, serataDiNuovo = false;
+let timerScaletta = null, scalettaInCorso = false, scalettaDiNuovo = false, ordinatoreScaletta = null;
+let prossimoTorna = null, tornaSerata = null;   // scheda brano aperta dalla scaletta: "◀" riporta alla serata
+let scelti = [];
+const CAMPI_RIGA = ['id', 'tipo', 'brano', 'nota', 'minuti'];
+
+function serataSalvata() { return !!(serataAperta && serateTutte().some((s) => s.id === serataAperta.id)); }
+function riepilogoDi(righe, orario) { const r = risposta(); return Regole.riepilogoScaletta(righe, brani(), (r && r.sezioni) || [], orario || ''); }
+function quantiSanno(branoId) { return statiStudio().filter((s) => s.brano === branoId && s.stato === 'Lo so').length; }
+function testoBrani(n) { return n === 1 ? '1 brano' : n + ' brani'; }
+function dataSerata(s, breve) { return Regole.scriviData(s.data, breve) || 'senza data'; }
+
+/* Elenco delle serate e riquadro "Prossima serata" nella schermata Inizio */
+function infoScaletta(s) {
+  const rp = riepilogoDi(righeDi(s.id), '');
+  return rp.totale.brani ? testoBrani(rp.totale.brani) + ' · ' + Regole.scriviDurataSet(rp.totale) : 'scaletta vuota';
+}
+function disegnaSerate() {
+  const o = Regole.ordinaSerate(serateTutte(), oggiLocale());
+  const riga = (s) => {
+    const li = el('li'); const b = el('button', 'serata'); b.type = 'button'; b.dataset.id = s.id;
+    b.append(el('b', '', dataSerata(s)), el('span', 'dove', (s.locale || 'locale da scrivere') + (s.orario ? ' · ore ' + s.orario : '')), el('span', 'info', infoScaletta(s)));
+    b.addEventListener('click', () => apriSerata(s.id));
+    li.append(b); return li;
+  };
+  const up = $('listaProssime'); up.textContent = ''; o.prossime.forEach((s) => up.append(riga(s)));
+  const pp = $('listaPassate'); pp.textContent = ''; o.passate.forEach((s) => pp.append(riga(s)));
+  $('nPassate').textContent = o.passate.length;
+  $('boxPassate').hidden = !o.passate.length;
+  const v = $('serateVuote');
+  v.textContent = o.prossime.length ? '' : (o.passate.length ? 'Nessuna serata in arrivo.' : 'Ancora nessuna serata.') + (io() ? ' Tocca "+ Nuova serata".' : '');
+  v.hidden = !v.textContent;
+  $('btnNuovaSerata').hidden = !io();
+  const p = o.prossima, box = $('riquadroProssima');
+  box.hidden = !p;
+  if (p) {
+    box.dataset.id = p.id;
+    $('prossimaData').textContent = dataSerata(p) + (p.data === oggiLocale() ? ' · stasera' : '');
+    $('prossimaDove').textContent = (p.locale || 'locale da scrivere') + (p.orario ? ' · ore ' + p.orario : '');
+    $('prossimaScaletta').textContent = infoScaletta(p);
+  }
+}
+$('riquadroProssima').addEventListener('click', () => { if ($('riquadroProssima').dataset.id) apriSerata($('riquadroProssima').dataset.id); });
+$('btnNuovaSerata').addEventListener('click', () => { if (puoScrivere('esitoSerate')) apriSerata(null); });
+
+/* Scheda serata */
+function copiaRiga(x) { const o = {}; CAMPI_RIGA.concat(['versione']).forEach((k) => { o[k] = x[k] === undefined || x[k] === null ? '' : x[k]; }); if (!o.tipo) o.tipo = 'brano'; return o; }
+function rigaPerMotore(x) { const o = {}; CAMPI_RIGA.forEach((k) => { o[k] = x[k] === undefined || x[k] === null ? '' : x[k]; }); return o; }
+function scalettaOccupata() {
+  const a = document.activeElement;
+  return !$('vSerata').hidden && (!!timerSerata || serataInCorso || !!timerScaletta || scalettaInCorso
+    || !!(a && a.tagName !== 'BUTTON' && ($('moduloSerata').contains(a) || $('listaScaletta').contains(a))));
+}
+
+function apriSerata(id, daRidisegno) {
+  const s = id ? serateTutte().find((x) => x.id === id) : null;
+  if (id && !s) return vai('vSerate');
+  serataAperta = s ? Object.assign({}, s) : { id: nuovoIdBrano(), versione: 0, data: '', locale: '', orario: '', note: '' };
+  const lista = righeDi(serataAperta.id).map(copiaRiga);
+  const aperta = scal.serata === serataAperta.id && lista.some((x) => x.id === scal.aperta) ? scal.aperta : null;
+  scal = { serata: serataAperta.id, righe: lista, conosciute: lista.map((x) => ({ id: x.id, versione: x.versione })), aperta };
+  riempiSerata();
+  if (!daRidisegno || $('vSerata').hidden) vai('vSerata'); else aggiornaRete();
+  if (!s) $('sData').focus();
+}
+function riempiSerata() {
+  memoria.set('serataAperta', serataAperta.id);
+  $('sData').value = serataAperta.data; $('sOrario').value = serataAperta.orario;
+  $('sLocale').value = serataAperta.locale; $('sNote').value = serataAperta.note;
+  document.querySelectorAll('#moduloSerata .invalido').forEach((x) => x.classList.remove('invalido'));
+  $('riquadroEliminaSerata').hidden = !stato.admin || !serataSalvata();
+  const be = $('btnEliminaSerata'); delete be.dataset.conferma; be.textContent = 'Elimina serata'; be.className = 'pericolo';
+  mostra('esitoSerata', ''); mostra('esitoScaletta', '');
+  aggiornaInfoSerata();
+  disegnaScaletta();
+}
+function aggiornaInfoSerata() {
+  const s = serataAperta;
+  $('sInfo').textContent = s.versione ? 'Ultima modifica ' + (s.modificatoDa || '') + ' il ' + dataOra(s.modificatoIl) : 'Serata nuova: si salva appena scrivi la data.';
+}
+function leggiModuloSerata() {
+  return { id: serataAperta.id, data: $('sData').value, locale: $('sLocale').value, orario: $('sOrario').value, note: $('sNote').value };
+}
+const CAMPO_SERATA = { data: 'sData', orario: 'sOrario', locale: 'sLocale', note: 'sNote' };
+function cambioSerata() {
+  clearTimeout(timerSerata); timerSerata = null;
+  aggiornaVistaScaletta();                       // orari previsti aggiornati mentre si scrive l'inizio
+  if (!io() || !serataAperta) return;
+  if (!puoScrivere('esitoSerata')) { statoSalva('serve la rete', 'errore'); return; }
+  const n = Regole.normalizzaSerata(leggiModuloSerata());
+  document.querySelectorAll('#moduloSerata .invalido').forEach((x) => x.classList.remove('invalido'));
+  n.errori.forEach((c) => { const x = $(CAMPO_SERATA[c]); if (x) x.classList.add('invalido'); });
+  if (n.errori.length) {
+    statoSalva(n.errori.includes('data') ? 'serve la data' : 'da correggere', 'errore');
+    mostra('esitoSerata', n.errori.includes('data') ? 'Scrivi la data: la serata si salva da lì.' : 'Orario da correggere: scrivilo come 22:00 (va bene anche 22.00 o 2200).', true);
+    return;
+  }
+  mostra('esitoSerata', '');
+  statoSalva('salvataggio…');
+  timerSerata = setTimeout(() => { timerSerata = null; salvaSerata(0); }, 700);
+}
+async function salvaSerata(tentativo) {
+  if (serataInCorso) { serataDiNuovo = true; return; }
+  const dati = leggiModuloSerata();
+  if (Regole.normalizzaSerata(dati).errori.length) return;
+  serataInCorso = true;
+  const id = dati.id, eraNuova = !serataSalvata();
+  try {
+    const j = await chiama('salvaSerata', { serata: dati, versione: serataAperta && serataAperta.id === id && serataAperta.versione ? serataAperta.versione : undefined });
+    if (!j.ok) { statoSalva('non salvato', 'errore'); mostra('esitoSerata', 'Non salvata: ' + (j.campi ? j.campi.join(', ') : j.errore), true); return; }
+    const r = risposta(); r.serate = r.serate || [];
+    const i = r.serate.findIndex((x) => x.id === id);
+    if (i >= 0) r.serate[i] = j.serata; else r.serate.push(j.serata);
+    salvaCopia();
+    if (serataAperta && serataAperta.id === id) {
+      Object.assign(serataAperta, j.serata);
+      if (document.activeElement !== $('sOrario')) $('sOrario').value = j.serata.orario;
+      $('riquadroEliminaSerata').hidden = !stato.admin;
+      aggiornaInfoSerata();
+      if (eraNuova) { disegnaScaletta(); if (scal.righe.length) cambioScaletta(); }   // copia di una serata: ora si salva anche la scaletta
+    }
+    disegnaSerate();
+    statoSalva('salvato ✓', 'salvato');
+    if (j.avviso) mostra('esitoSerata', 'Attenzione: ' + j.avviso.modificatoDa + ' aveva modificato questa serata il ' + dataOra(j.avviso.modificatoIl) + '. Hai salvato la tua versione: controllate insieme.', true);
+  } catch (e) {
+    if (e instanceof ErroreRete && tentativo < 2 && navigator.onLine) {
+      statoSalva('riprovo…'); serataInCorso = false;
+      setTimeout(() => salvaSerata(tentativo + 1), tentativo ? 5000 : 2000);
+      return;
+    }
+    statoSalva('non salvato: serve la rete', 'errore');
+    mostra('esitoSerata', 'Non salvata: ' + e.message + '. Le modifiche restano su questa schermata finché non la lasci.', true);
+  } finally {
+    serataInCorso = false;
+    if (serataDiNuovo) { serataDiNuovo = false; salvaSerata(0); }
+  }
+}
+['sData', 'sLocale', 'sOrario', 'sNote'].forEach((x) => $(x).addEventListener('input', cambioSerata));
+$('sOrario').addEventListener('blur', () => { const o = Regole.leggiOrario($('sOrario').value); if (o) $('sOrario').value = o; });
+$('btnSerataIndietro').addEventListener('click', () => {
+  if (timerSerata) { clearTimeout(timerSerata); timerSerata = null; salvaSerata(0); }
+  if (timerScaletta) { clearTimeout(timerScaletta); timerScaletta = null; salvaScaletta(0); }
+  vai('vSerate');
+});
+
+/* Scaletta */
+function orarioScritto() { return Regole.leggiOrario($('sOrario').value) || ''; }
+function rigaDurata(s, nome) {
+  const d = Regole.scriviDurataSet(s);
+  return nome + (d ? ' ' + d : '') + (s.inizio ? ' · ' + s.inizio + ' → circa ' + s.fine : '');
+}
+/** Contenuto della riga compatta (numero, titolo, dettagli). Si riscrive anche mentre si scrive nel riquadro aperto. */
+function riempiCorpoRiga(corpo, x, info, rp, ctx) {
+  corpo.textContent = '';
+  const r1 = el('span', 'r1');
+  if (x.tipo === 'brano') {
+    const b = ctx.perId[x.brano];
+    r1.append(el('span', 'num', info.numero + ''), el('span', 'titolo', b ? b.titolo : '(brano tolto)'));
+    const det = el('span', 'det');
+    if (b) {
+      const t = tonalitaDi(b), d = Regole.durataEffettiva(b, ctx.sez.filter((s) => s.brano === b.id));
+      det.append([t.suonata ? t.testo : '', b.bpm ? b.bpm + ' BPM' : '', d.secondi !== null ? Regole.scriviDurata(d.secondi) : 'durata ?'].filter(Boolean).join(' · ') + ' · ');
+      det.append(el('span', 'sanno', quantiSanno(b.id) + '/5 lo sanno'));
+      if (rp.doppioni[b.id]) det.append(' · ', el('span', 'doppio', 'in scaletta ' + rp.doppioni[b.id] + ' volte'));
+    }
+    corpo.append(r1, det);
+    if (x.nota) corpo.append(el('span', 'nota', x.nota));
+  } else if (x.tipo === 'pausa') {
+    const s = rp.sets[info.set - 1];
+    r1.append(el('span', 'titolo', 'Pausa ' + (x.minuti || '?') + ' min'));
+    corpo.append(r1, el('span', 'det', s ? 'fine ' + rigaDurata(s, ctx.nomeSet(s.numero)) : ''));
+  } else if (x.tipo === 'bis') {
+    const s = rp.sets[rp.sets.length - 1];
+    r1.append(el('span', 'titolo', 'Bis'));
+    corpo.append(r1, el('span', 'det', s ? 'fine ' + rigaDurata(s, ctx.nomeSet(s.numero)) : ''));
+  } else {
+    r1.append(el('span', 'num', '›'), el('span', 'titolo', x.nota || '(scrivi il testo)'));
+    corpo.append(r1);
+    if (x.minuti) corpo.append(el('span', 'det', x.minuti + ' min'));
+  }
+}
+function contestoScaletta() {
+  const rp = riepilogoDi(scal.righe, orarioScritto());
+  const perId = {}; brani().forEach((b) => { perId[b.id] = b; });
+  const r = risposta(), piuSet = rp.sets.length > 1;
+  return { rp, perId, sez: (r && r.sezioni) || [], nomeSet: (k) => (piuSet || rp.bis ? k + '° set' : 'set') };
+}
+/** Totale in testa, brani senza durata, ultimo set e bis in fondo. */
+function disegnaTotaliScaletta(ctx) {
+  const rp = ctx.rp;
+  const t = $('scTotale'); t.textContent = '';
+  if (rp.totale.brani || rp.totale.minutiExtra) t.append(testoBrani(rp.totale.brani) + ' · totale ', el('b', '', Regole.scriviDurataSet(rp.totale)));
+  const m = $('scMancanti');
+  m.textContent = rp.totale.mancanti.length ? 'Senza durata: ' + rp.totale.mancanti.join(', ') + ' (scrivi la durata manuale o le battute nella struttura).' : '';
+  m.hidden = !m.textContent;
+  const fondo = [], ultimo = rp.sets[rp.sets.length - 1];
+  if (ultimo && !rp.bis && (rp.sets.length > 1 || rp.conOrari) && ultimo.righe.length) fondo.push(rigaDurata(ultimo, ctx.nomeSet(ultimo.numero)));
+  if (rp.bis) fondo.push(rigaDurata(rp.bis, 'Bis'));
+  const f = $('scFondo'); f.textContent = fondo.join(' · '); f.hidden = !fondo.length;
+}
+/**
+ * (non ovvio) Mentre si scrive nel riquadro aperto (nota, minuti, inizio della serata) si riscrivono solo le righe
+ * compatte e i totali, senza ricostruire la lista: ricostruendola, il campo toccato subito dopo sparirebbe sotto il dito.
+ */
+function aggiornaVistaScaletta() {
+  const ctx = contestoScaletta();
+  scal.righe.forEach((x, i) => {
+    const c = document.querySelector('#listaScaletta li[data-id="' + x.id + '"] button.corpo');
+    if (c) riempiCorpoRiga(c, x, ctx.rp.perRiga[i] || {}, ctx.rp, ctx);
+  });
+  disegnaTotaliScaletta(ctx);
+}
+function disegnaScaletta() {
+  const ul = $('listaScaletta'); ul.textContent = '';
+  const ctx = contestoScaletta(), n = scal.righe.length;
+  scal.righe.forEach((x, i) => {
+    const li = el('li', 'sezione' + (x.tipo !== 'brano' ? ' speciale ' + x.tipo : '') + (scal.aperta === x.id ? ' aperta' : ''));
+    li.dataset.id = x.id;
+    const riga = el('div', 'riga-sez');
+    const maniglia = el('span', 'maniglia', '≡'); maniglia.setAttribute('aria-label', 'trascina per spostare');
+    const corpo = el('button', 'corpo'); corpo.type = 'button';
+    riempiCorpoRiga(corpo, x, ctx.rp.perRiga[i] || {}, ctx.rp, ctx);
+    corpo.addEventListener('click', () => { scal.aperta = scal.aperta === x.id ? null : x.id; disegnaScaletta(); });
+    const frecce = el('span', 'frecce');
+    const su = el('button', 'su', '▲'); su.type = 'button'; su.setAttribute('aria-label', 'sposta su'); su.disabled = i === 0;
+    const giu = el('button', 'giu', '▼'); giu.type = 'button'; giu.setAttribute('aria-label', 'sposta giù'); giu.disabled = i === n - 1;
+    su.addEventListener('click', () => spostaRiga(i, -1));
+    giu.addEventListener('click', () => spostaRiga(i, 1));
+    frecce.append(su, giu);
+    riga.append(maniglia, corpo, frecce); li.append(riga);
+    if (scal.aperta === x.id) li.append(editorRiga(x));
+    ul.append(li);
+  });
+  disegnaTotaliScaletta(ctx);
+  const v = $('scVuota');
+  v.textContent = !serataSalvata() ? (n ? 'La scaletta si salva appena scrivi la data.' : 'Prima scrivi la data: poi puoi preparare la scaletta.')
+    : !n ? (io() ? 'Ancora nessun brano: tocca "+ Brani".' : 'Scaletta vuota.') : '';
+  v.hidden = !v.textContent;
+  preparaOrdinatoreScaletta();
+  aggiornaRete();
+}
+function editorRiga(x) {
+  const box = el('div', 'editor');
+  const campo = (etichetta, nome, attr) => {
+    const lab = el('label', 'etichetta', etichetta);
+    const inp = el('input'); inp.dataset.campo = nome; inp.value = x[nome] === undefined ? '' : x[nome];
+    Object.assign(inp, attr || {});
+    inp.addEventListener('input', () => { x[nome] = nome === 'minuti' ? (inp.value === '' ? '' : Number(inp.value)) : inp.value; aggiornaVistaScaletta(); cambioScaletta(); });
+    lab.append(inp); box.append(lab);
+  };
+  if (x.tipo === 'brano') campo('Nota per questa serata (va sul foglio)', 'nota', { maxLength: Regole.MAX_NOTA_RIGA, placeholder: 'es. attacca subito, Ste cambia chitarra' });
+  if (x.tipo === 'pausa') campo('Minuti di pausa', 'minuti', { type: 'number', inputMode: 'numeric', min: Regole.PAUSA_MIN, max: Regole.PAUSA_MAX });
+  if (x.tipo === 'libera') {
+    campo('Testo (va sul foglio)', 'nota', { maxLength: Regole.MAX_LIBERA, placeholder: 'es. Ospite, Stacchetto, Sindaco che parla' });
+    campo('Minuti (facoltativi: contano negli orari)', 'minuti', { type: 'number', inputMode: 'numeric', min: 0, max: Regole.MAX_MINUTI_LIBERA });
+  }
+  const az = el('div', 'azioni-sez');
+  if (x.tipo === 'brano' && brani().some((b) => b.id === x.brano)) {
+    const ap = el('button', 'secondario', 'Apri scheda brano'); ap.type = 'button';
+    ap.addEventListener('click', () => { prossimoTorna = serataAperta.id; apriBrano(x.brano); });
+    az.append(ap);
+  }
+  const via = el('button', 'pericolo', 'Togli dalla scaletta'); via.type = 'button'; via.dataset.togli = '1';
+  via.addEventListener('click', () => { scal.righe = scal.righe.filter((y) => y.id !== x.id); if (scal.aperta === x.id) scal.aperta = null; disegnaScaletta(); cambioScaletta(); });
+  az.append(via); box.append(az);
+  return box;
+}
+function spostaRiga(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= scal.righe.length) return;
+  const t = scal.righe[i]; scal.righe[i] = scal.righe[j]; scal.righe[j] = t;
+  disegnaScaletta(); cambioScaletta();
+}
+function preparaOrdinatoreScaletta() {
+  if (!window.Sortable || ordinatoreScaletta) return;
+  ordinatoreScaletta = Sortable.create($('listaScaletta'), {
+    handle: '.maniglia', animation: 150, ghostClass: 'fantasma', draggable: 'li.sezione',
+    onEnd: (e) => {
+      if (e.oldIndex === e.newIndex) return;
+      const [x] = scal.righe.splice(e.oldIndex, 1);
+      scal.righe.splice(e.newIndex, 0, x);
+      disegnaScaletta(); cambioScaletta();
+    }
+  });
+}
+/** Le righe nuove vanno prima del Bis, se c'è (il Bis resta in fondo); si trascinano dove si vuole. */
+function aggiungiRighe(nuove, apri) {
+  if (scal.righe.length + nuove.length > Regole.MAX_SCALETTA) { mostra('esitoScaletta', 'Massimo ' + Regole.MAX_SCALETTA + ' righe in una scaletta.', true); return false; }
+  const ib = scal.righe.findIndex((x) => x.tipo === 'bis');
+  const dove = ib >= 0 && !nuove.some((x) => x.tipo === 'bis') ? ib : scal.righe.length;
+  scal.righe.splice(dove, 0, ...nuove.map((x) => Object.assign({ id: nuovoIdBrano(), tipo: 'brano', brano: '', nota: '', minuti: '', versione: 0 }, x)));
+  if (apri) scal.aperta = scal.righe[dove].id;
+  mostra('esitoScaletta', '');
+  disegnaScaletta(); cambioScaletta();
+  return true;
+}
+$('btnAggPausa').addEventListener('click', () => aggiungiRighe([{ tipo: 'pausa', minuti: Regole.PAUSA_PROPOSTA }], true));
+$('btnAggLibera').addEventListener('click', () => {
+  if (aggiungiRighe([{ tipo: 'libera' }], true)) { const x = document.querySelector('#listaScaletta li.aperta [data-campo="nota"]'); if (x) x.focus(); }
+});
+$('btnAggBis').addEventListener('click', () => {
+  if (scal.righe.some((x) => x.tipo === 'bis')) return mostra('esitoScaletta', 'C’è già il Bis: i brani dopo il Bis sono il bis.', true);
+  aggiungiRighe([{ tipo: 'bis' }], false);
+});
+
+function nomeCampoRiga(c) {
+  return { brano: 'brano', minuti: 'minuti', nota: 'testo della riga libera', secondoBis: 'un solo Bis', pausaDopoBis: 'niente pause dopo il Bis', troppe: 'massimo ' + Regole.MAX_SCALETTA + ' righe', doppione: 'riga doppia', id: 'identificativo', tipo: 'tipo di riga' }[c] || c;
+}
+function cambioScaletta() {
+  clearTimeout(timerScaletta); timerScaletta = null;
+  if (!io() || !scal.serata) return;
+  const n = Regole.normalizzaScaletta(scal.righe.map(rigaPerMotore));
+  document.querySelectorAll('#listaScaletta .invalido').forEach((x) => x.classList.remove('invalido'));
+  if (n.errori.length) {
+    n.errori.forEach((e) => {
+      const rg = scal.righe[e.indice];
+      if (rg) e.campi.forEach((c) => { const x = document.querySelector('#listaScaletta li[data-id="' + rg.id + '"] [data-campo="' + c + '"]'); if (x) x.classList.add('invalido'); });
+    });
+    statoSalva('da correggere', 'errore');
+    mostra('esitoScaletta', 'Da correggere: ' + n.errori.map((e) => (e.indice >= 0 ? 'riga ' + (e.indice + 1) + ' — ' : '') + e.campi.map(nomeCampoRiga).join(', ')).join('; ') + '. Finché non è a posto la scaletta non si salva.', true);
+    return;
+  }
+  if (!serataSalvata()) { statoSalva('serve la data', 'errore'); return; }
+  if (!puoScrivere('esitoScaletta')) { statoSalva('serve la rete', 'errore'); return; }
+  mostra('esitoScaletta', '');
+  statoSalva('salvataggio…');
+  timerScaletta = setTimeout(() => { timerScaletta = null; salvaScaletta(0); }, ATTESA_STRUTTURA_MS);
+}
+function testoAvvisoScaletta(a) {
+  const parti = [];
+  if (a.tenute) parti.push(a.tenute === 1 ? 'ho tenuto in fondo 1 riga che avevano aggiunto' : 'ho tenuto in fondo ' + a.tenute + ' righe che avevano aggiunto');
+  if (a.cambiateDaAltri) parti.push(a.cambiateDaAltri === 1 ? '1 riga era stata cambiata o spostata: ora vale la tua versione' : a.cambiateDaAltri + ' righe erano state cambiate o spostate: ora vale la tua versione');
+  if (a.ricreate) parti.push(a.ricreate === 1 ? '1 riga che era stata tolta è tornata, perché c’era ancora nella tua' : a.ricreate + ' righe che erano state tolte sono tornate, perché c’erano ancora nella tua');
+  return 'Attenzione: ' + (a.modificatoDa || 'un altro') + ' ha modificato la scaletta' + (a.modificatoIl ? ' il ' + dataOra(a.modificatoIl) : '') + '. ' + parti.join('; ') + '. Controllate insieme.';
+}
+async function salvaScaletta(tentativo) {
+  if (scalettaInCorso) { scalettaDiNuovo = true; return; }
+  if (!scal.serata || !serataSalvata()) return;
+  const lista = scal.righe.map(rigaPerMotore);
+  if (Regole.normalizzaScaletta(lista).errori.length) return;
+  scalettaInCorso = true;
+  const serataId = scal.serata, conosciute = scal.conosciute;
+  const note = {}; lista.forEach((x) => { note[x.id] = true; }); conosciute.forEach((x) => { note[x.id] = true; });
+  try {
+    const j = await chiama('salvaScaletta', { serata: serataId, righe: lista, conosciute });
+    if (!j.ok) {
+      statoSalva('non salvato', 'errore');
+      mostra('esitoScaletta', 'Scaletta non salvata: ' + (j.righe ? j.righe.map((e) => e.campi.map(nomeCampoRiga).join(', ')).join('; ') : j.errore), true);
+      return;
+    }
+    const r = risposta();
+    r.scalette = (r.scalette || []).filter((x) => x.serata !== serataId).concat(j.righe);
+    salvaCopia();
+    if (scal.serata === serataId) {
+      scal.conosciute = j.righe.map((x) => ({ id: x.id, versione: x.versione }));
+      // come la struttura: si aggiornano gli oggetti esistenti; le righe tenute perché aggiunte da altri si accodano;
+      // quelle di brani eliminati nel frattempo (scartate dal motore) spariscono
+      const ricevute = {}; j.righe.forEach((x) => { ricevute[x.id] = x; });
+      if (j.braniSpariti) scal.righe = scal.righe.filter((x) => ricevute[x.id]);
+      const locali = {}; scal.righe.forEach((x) => { locali[x.id] = x; });
+      let accodate = 0;
+      j.righe.forEach((x) => {
+        if (locali[x.id]) locali[x.id].versione = x.versione;
+        else if (!note[x.id]) { scal.righe.push(copiaRiga(x)); accodate++; }
+      });
+      if (accodate || j.braniSpariti) disegnaScaletta(); else aggiornaVistaScaletta();   // righe degli altri: si vedono subito
+    }
+    disegnaSerate();
+    statoSalva('salvato ✓', 'salvato');
+    if (j.avviso) mostra('esitoScaletta', testoAvvisoScaletta(j.avviso), true);
+    else if (j.braniSpariti) mostra('esitoScaletta', (j.braniSpariti === 1 ? '1 brano era stato eliminato dal repertorio: l’ho tolto' : j.braniSpariti + ' brani erano stati eliminati dal repertorio: li ho tolti') + ' dalla scaletta.', true);
+  } catch (e) {
+    if (e instanceof ErroreRete && tentativo < 2 && navigator.onLine) {
+      statoSalva('riprovo…'); scalettaInCorso = false;
+      setTimeout(() => salvaScaletta(tentativo + 1), tentativo ? 5000 : 2000);
+      return;
+    }
+    statoSalva('non salvato: serve la rete', 'errore');
+    mostra('esitoScaletta', 'Scaletta non salvata: ' + e.message + '. Le modifiche restano su questa schermata finché non la lasci.', true);
+  } finally {
+    scalettaInCorso = false;
+    if (scalettaDiNuovo) { scalettaDiNuovo = false; salvaScaletta(0); }
+  }
+}
+
+/* Scelta dei brani: si aggiungono nell'ordine in cui si toccano */
+function apriScegli() {
+  if (!puoScrivere('esitoScaletta')) return;
+  scelti = []; $('scegliCerca').value = '';
+  disegnaScegli(); vai('vScegli');
+}
+function disegnaScegli() {
+  const ul = $('listaScegli'); ul.textContent = '';
+  const q = $('scegliCerca').value.trim().toLowerCase();
+  const gia = {}; scal.righe.forEach((x) => { if (x.tipo === 'brano') gia[x.brano] = true; });
+  brani().slice().sort((a, b) => String(a.titolo).localeCompare(String(b.titolo), 'it', { sensitivity: 'base' }))
+    .filter((b) => !q || (b.titolo + ' ' + (b.artista || '')).toLowerCase().includes(q))
+    .forEach((b) => {
+      const k = scelti.indexOf(b.id);
+      const li = el('li'); const bt = el('button', k >= 0 ? 'scelto' : ''); bt.type = 'button'; bt.dataset.id = b.id;
+      const tx = el('span', 'tx'); tx.append(el('b', '', b.titolo), el('span', 'tenue piccolo', b.artista ? ' · ' + b.artista : ''));
+      bt.append(el('span', 'ordine', k >= 0 ? String(k + 1) : ''), tx);
+      if (gia[b.id]) bt.append(el('span', 'gia', 'già in scaletta'));
+      bt.addEventListener('click', () => { const i = scelti.indexOf(b.id); if (i >= 0) scelti.splice(i, 1); else scelti.push(b.id); disegnaScegli(); });
+      li.append(bt); ul.append(li);
+    });
+  if (!brani().length) ul.append(el('li', 'tenue', 'Il repertorio è vuoto: prima aggiungi i brani.'));
+  $('btnScegliOk').textContent = scelti.length ? 'Aggiungi ' + testoBrani(scelti.length) : 'Aggiungi';
+  $('btnScegliOk').disabled = !scelti.length || senzaRete();
+}
+$('btnAggBrani').addEventListener('click', apriScegli);
+$('scegliCerca').addEventListener('input', disegnaScegli);
+$('btnScegliIndietro').addEventListener('click', () => vai('vSerata'));
+$('btnScegliOk').addEventListener('click', () => {
+  if (!scelti.length) return;
+  vai('vSerata');
+  aggiungiRighe(scelti.map((id) => ({ tipo: 'brano', brano: id })), false);
+  scelti = [];
+});
+
+/* Duplica ed elimina */
+$('btnDuplica').addEventListener('click', () => {
+  if (!io() || !serataAperta || !puoScrivere('esitoSerata')) return;
+  const righe = scal.righe.map((x) => Object.assign(copiaRiga(x), { id: nuovoIdBrano(), versione: 0 }));
+  serataAperta = { id: nuovoIdBrano(), versione: 0, data: '', locale: serataAperta.locale, orario: serataAperta.orario, note: serataAperta.note };
+  scal = { serata: serataAperta.id, righe, conosciute: [], aperta: null };
+  riempiSerata();
+  window.scrollTo(0, 0);
+  mostra('esitoSerata', 'Copia della serata: scrivi la data e si salva con tutta la scaletta.');
+  $('sData').focus();
+});
+$('btnEliminaSerata').addEventListener('click', () => chiediConferma($('btnEliminaSerata'), async () => {
+  if (!puoScrivere('esitoSerata') || !serataAperta) return;
+  const id = serataAperta.id;
+  try {
+    const j = await chiama('eliminaSerata', { serata: id });
+    if (!j.ok) return mostra('esitoSerata', 'Non eliminata: ' + j.errore, true);
+    const r = risposta();
+    r.serate = (r.serate || []).filter((s) => s.id !== id);
+    r.scalette = (r.scalette || []).filter((s) => s.serata !== id);
+    salvaCopia(); memoria.del('serataAperta'); serataAperta = null;
+    disegnaSerate(); vai('vSerate');
+    statoSalva('eliminata ✓', 'salvato');
+    mostra('esitoSerate', 'Serata eliminata (resta traccia nello Storico).');
+  } catch (e) { mostra('esitoSerata', 'Non eliminata: ' + e.message, true); }
+}));
+
+/* ---------- T7 · Foglio stampato ----------
+ * Un A4 uguale per tutti: titoli grandi da 32 pt in giù finché tutto sta in una pagina (non sotto 22 pt);
+ * se non basta, una pagina per set (il salto cade sulla Pausa). La misura si fa sul foglio vero dell'anteprima,
+ * largo 186 mm come il testo stampato: anteprima e stampa coincidono. */
+const FS_MAX = 32, FS_MIN = 22;
+function righello() {
+  let r = $('righello');
+  if (!r) { r = el('div'); r.id = 'righello'; document.body.append(r); }
+  return r.offsetHeight;          // 273 mm (297 − 2 × 12 di margine) in pixel
+}
+function testaFoglio(s, seguito, nPagina) {
+  if (seguito) return el('div', 'seguito', nPagina + '° set · ' + dataSerata(s, true) + (s.locale ? ' · ' + s.locale : ''));
+  const t = el('div', 'testa-f');
+  const img = el('img'); img.src = 'logo/logo-dish-chiaro-scritta.svg'; img.alt = 'Dish for a King';
+  const tt = el('div', 'tit-f'); tt.append(el('b', '', 'Scaletta'), el('span', '', [dataSerata(s), s.locale, s.orario ? 'ore ' + s.orario : ''].filter(Boolean).join(' · ')));
+  t.append(img, tt); return t;
+}
+function righeFoglio(s, indici, rp, ctx) {
+  const out = [], perId = {}; brani().forEach((b) => { perId[b.id] = b; });
+  const notaz = impostazioni().notazione, piuSet = rp.sets.length > 1;
+  const nomeSet = (k) => (piuSet || rp.bis ? k + '° set' : 'Set');
+  indici.forEach((i) => {
+    const x = scal.righe[i], info = rp.perRiga[i] || {};
+    if (x.tipo === 'brano') {
+      const b = perId[x.brano] || { titolo: '(brano tolto)' };
+      const rs = Regole.rigaStampa(b, ctx.precedente, notaz); ctx.precedente = b;
+      const r = el('div', 'r brano');
+      r.append(el('span', 'num', String(info.numero)), el('span', 'tit', rs.titolo), el('span', 'ton', rs.tonalita), el('span', 'bpm', rs.bpm), el('span', 'acc' + (rs.accordatura ? '' : ' vuota'), rs.accordatura));
+      if (!rs.accordatura) r.lastChild.style.border = '0';
+      if (x.nota) r.append(el('span', 'nota', x.nota));
+      out.push(r);
+    } else if (x.tipo === 'libera') {
+      const r = el('div', 'r libera');
+      r.append(el('span', 'num', '›'), el('span', 'tit', x.nota), el('span', 'min', x.minuti ? x.minuti + ' min' : ''));
+      out.push(r);
+    } else {
+      const d = el('div', 'div ' + x.tipo);
+      const set = x.tipo === 'pausa' ? rp.sets[info.set - 1] : rp.sets[rp.sets.length - 1];
+      const ds = set ? Regole.scriviDurataSet(set) : '';
+      d.append(el('span', '', x.tipo === 'pausa' ? 'Pausa ' + x.minuti + ' min' : 'Bis'), el('span', '', set && ds ? nomeSet(set.numero) + ' ' + ds : ''));
+      out.push(d);
+    }
+  });
+  return out;
+}
+function piedeFoglio(rp) {
+  const p = el('div', 'piede'), ultimo = rp.sets[rp.sets.length - 1];
+  if (!rp.bis && rp.sets.length > 1 && ultimo) p.append(el('span', '', ultimo.numero + '° set ' + Regole.scriviDurataSet(ultimo)));
+  if (rp.bis) p.append(el('span', '', 'Bis ' + Regole.scriviDurataSet(rp.bis)));
+  p.append('Totale ' + (Regole.scriviDurataSet(rp.totale) || '—'));
+  return p;
+}
+/** (non ovvio) Si lascia il 3 % di margine (circa 8 mm): la stampa di Chrome arrotonda le righe in modo leggermente diverso dallo schermo. */
+const RISERVA = 0.97, FS_SENZA_A_CAPO = 26;
+/** Un titolo che va su due righe si legge peggio: se serve si scende fino a 26 pt per tenerli tutti su una riga. */
+function titoliACapo(pagina) {
+  return Array.from(pagina.querySelectorAll('.r .tit')).some((t) => t.offsetHeight > 1.5 * parseFloat(getComputedStyle(t).lineHeight));
+}
+function adatta(pagina, alto) {
+  for (let fs = FS_MAX; fs >= FS_MIN; fs--) {
+    pagina.style.setProperty('--fs', fs + 'pt');
+    if (pagina.offsetHeight <= alto * RISERVA && (fs <= FS_SENZA_A_CAPO || !titoliACapo(pagina))) return fs;
+  }
+  return FS_MIN;
+}
+function costruisciFoglio() {
+  const s = serataAperta, f = $('foglioStampa'); f.textContent = ''; f.style.transform = '';
+  const rp = riepilogoDi(scal.righe, s.orario);
+  const alto = righello();
+  const tutte = scal.righe.map((x, i) => i);
+  // 1) tutto in una pagina
+  let pag = el('div', 'pagina');
+  pag.append(testaFoglio(s), ...righeFoglio(s, tutte, rp, { precedente: null }), piedeFoglio(rp));
+  f.append(pag);
+  const fs = [adatta(pag, alto)];
+  // 2) non sta a 22 pt: una pagina per set (la Pausa chiude la pagina; il bis va con l'ultimo set)
+  if (pag.offsetHeight > alto * RISERVA && scal.righe.some((x) => x.tipo === 'pausa')) {
+    f.textContent = ''; fs.length = 0;
+    const gruppi = [[]];
+    scal.righe.forEach((x, i) => { gruppi[gruppi.length - 1].push(i); if (x.tipo === 'pausa' && !rp.perRiga[i].inBis) gruppi.push([]); });
+    if (gruppi.length > 1 && !gruppi[gruppi.length - 1].length) gruppi.pop();
+    const ctx = { precedente: null };
+    gruppi.forEach((g, k) => {
+      pag = el('div', 'pagina');
+      pag.append(testaFoglio(s, k > 0, k + 1), ...righeFoglio(s, g, rp, ctx));
+      if (k === gruppi.length - 1) pag.append(piedeFoglio(rp));
+      f.append(pag); fs.push(adatta(pag, alto));
+    });
+  }
+  const pagine = f.querySelectorAll('.pagina');
+  f.dataset.pagine = pagine.length;
+  f.dataset.fs = fs.join(',');
+  f.dataset.oltre = Array.from(pagine).some((p) => p.offsetHeight > alto * RISERVA) ? '1' : '';
+  scalaAnteprima();
+  const info = $('stampaInfo');
+  info.textContent = 'Il foglio esce così' + (pagine.length > 1 ? ' (' + pagine.length + ' pagine, una per set)' : '') + '. Dalla finestra di stampa scegli la stampante oppure "Salva come PDF".'
+    + (f.dataset.oltre ? ' La scaletta è molto lunga: a 22 pt non sta tutta, il resto va sulla pagina dopo.' : '');
+}
+function scalaAnteprima() {
+  const f = $('foglioStampa'), box = $('anteprima');
+  f.style.transform = '';
+  const sc = Math.min(1, box.clientWidth / f.offsetWidth);
+  f.style.transform = 'scale(' + sc + ')';
+  box.style.height = Math.ceil(f.offsetHeight * sc) + 'px';
+}
+function apriStampa() {
+  if (!serataAperta) return;
+  vai('vStampa');
+  costruisciFoglio();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (!$('vStampa').hidden) costruisciFoglio(); });
+}
+$('btnAnteprima').addEventListener('click', apriStampa);
+$('btnStampaIndietro').addEventListener('click', () => vai('vSerata'));
+$('btnStampa').addEventListener('click', () => window.print());
+window.addEventListener('resize', () => { if (!$('vStampa').hidden) scalaAnteprima(); });
 
 /* ---------- Partenza: subito dalla copia sul telefono, poi una chiamata ---------- */
 $('versioneMotore').textContent = stato.motore;

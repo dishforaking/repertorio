@@ -15,6 +15,7 @@
   <div class="riga">
     <img class="scritta" src="logo/logo-dish-scuro-scritta.svg" alt="Dish for a King">
     <div class="chi"><b id="chiSigla"></b><small id="statoSalva"></small></div>
+    <button type="button" id="btnImpostazioni" class="ingranaggio" data-vista="vImpostazioni" aria-label="Impostazioni" title="Impostazioni">⚙</button>
   </div>
   <div id="avvisoRete" class="avviso" hidden></div>
   <button id="avvisoVersione" class="avviso" hidden>Nuova versione: tocca per aggiornare</button>
@@ -28,6 +29,12 @@
     <img class="locandina" src="logo/logo-dish-scuro-locandina.svg" alt="Dish for a King">
     <h1 class="gotico" id="saluto">Benvenuto</h1>
     <p class="tenue centro" id="ruolo"></p>
+    <button type="button" class="riquadro prossima" id="riquadroProssima" hidden>
+      <span class="etichetta-prossima">Prossima serata</span>
+      <b id="prossimaData"></b>
+      <span id="prossimaDove"></span>
+      <span class="tenue piccolo" id="prossimaScaletta"></span>
+    </button>
     <div class="riquadro" id="riquadroDaSistemare">
       <h2>Da sistemare</h2>
       <ul class="bacheca" id="listaDaSistemare"></ul>
@@ -243,6 +250,84 @@
     </div>
   </section>
 
+  <section id="vSerate" class="vista" hidden>
+    <h1 class="gotico">Serate</h1>
+    <button type="button" id="btnNuovaSerata">+ Nuova serata</button>
+    <ul class="serate" id="listaProssime"></ul>
+    <p class="tenue" id="serateVuote" hidden></p>
+    <details id="boxPassate" hidden><summary>Passate (<span id="nPassate">0</span>)</summary><ul class="serate" id="listaPassate"></ul></details>
+    <div class="esito" id="esitoSerate" hidden></div>
+  </section>
+
+  <section id="vSerata" class="vista" hidden>
+    <button type="button" id="btnSerataIndietro" class="secondario indietro">◀ Serate</button>
+    <form id="moduloSerata" onsubmit="return false" autocomplete="off">
+      <fieldset id="campiSerata">
+        <div class="riquadro">
+          <div class="riga-campi">
+            <div class="campo-col">
+              <label class="etichetta" for="sData">Data</label>
+              <input id="sData" type="date" min="2000-01-01" max="2100-12-31">
+            </div>
+            <div class="campo-col stretto">
+              <label class="etichetta" for="sOrario">Inizio</label>
+              <input id="sOrario" inputmode="decimal" maxlength="5" placeholder="22:00">
+            </div>
+          </div>
+          <label class="etichetta" for="sLocale">Locale</label>
+          <input id="sLocale" class="grande" maxlength="80" placeholder="Nome del locale">
+          <label class="etichetta" for="sNote">Note della serata</label>
+          <textarea id="sNote" rows="2" maxlength="500" placeholder="Orario del soundcheck, chi porta cosa…"></textarea>
+        </div>
+      </fieldset>
+    </form>
+    <div class="riquadro" id="riquadroScaletta">
+      <div class="testa-struttura"><h2>Scaletta</h2><span id="scTotale"></span></div>
+      <p class="tenue piccolo" id="scMancanti" hidden></p>
+      <fieldset id="campiScaletta">
+        <ul class="sezioni scaletta" id="listaScaletta"></ul>
+        <p class="tenue piccolo" id="scVuota" hidden></p>
+        <div class="aggiungi">
+          <button type="button" id="btnAggBrani">+ Brani</button>
+          <button type="button" id="btnAggPausa" class="secondario">+ Pausa</button>
+          <button type="button" id="btnAggBis" class="secondario">+ Bis</button>
+          <button type="button" id="btnAggLibera" class="secondario">+ Riga libera</button>
+        </div>
+      </fieldset>
+      <p class="tenue piccolo" id="scFondo" hidden></p>
+      <div class="esito" id="esitoScaletta" hidden></div>
+    </div>
+    <div class="riquadro">
+      <button type="button" id="btnAnteprima">Anteprima di stampa</button>
+      <button type="button" id="btnDuplica" class="secondario">Duplica serata</button>
+    </div>
+    <p class="tenue piccolo" id="sInfo"></p>
+    <div class="esito" id="esitoSerata" hidden></div>
+    <div class="riquadro" id="riquadroEliminaSerata" hidden>
+      <h2>Amministrazione</h2>
+      <p class="tenue">Solo l'amministratore elimina una serata: si toglie anche la sua scaletta (resta traccia nello Storico).</p>
+      <button type="button" id="btnEliminaSerata" class="pericolo" data-testo="Elimina serata">Elimina serata</button>
+    </div>
+  </section>
+
+  <section id="vScegli" class="vista" hidden>
+    <button type="button" id="btnScegliIndietro" class="secondario indietro">◀ Serata</button>
+    <h1 class="gotico">Aggiungi brani</h1>
+    <p class="tenue piccolo">Tocca i brani: vanno in fondo alla scaletta nell'ordine in cui li tocchi.</p>
+    <input id="scegliCerca" type="search" placeholder="Cerca titolo o artista">
+    <ul class="scegli" id="listaScegli"></ul>
+    <button type="button" id="btnScegliOk">Aggiungi</button>
+  </section>
+
+  <section id="vStampa" class="vista" hidden>
+    <div class="solo-schermo">
+      <button type="button" id="btnStampaIndietro" class="secondario indietro">◀ Serata</button>
+      <button type="button" id="btnStampa">Stampa</button>
+      <p class="tenue piccolo" id="stampaInfo">Il foglio esce così. Dalla finestra di stampa scegli la stampante oppure "Salva come PDF".</p>
+    </div>
+    <div class="anteprima" id="anteprima"><div id="foglioStampa" class="foglio"></div></div>
+  </section>
+
   <section id="vImpostazioni" class="vista" hidden>
     <h1 class="gotico">Impostazioni</h1>
     <p class="tenue">Valgono solo per te e si salvano sul foglio della band. Quelle con l'etichetta grigia avranno effetto dalla tappa indicata.</p>
@@ -300,8 +385,8 @@
 <nav id="barra">
   <button data-vista="vInizio" class="attivo">Inizio</button>
   <button data-vista="vRepertorio">Repertorio</button>
+  <button data-vista="vSerate" id="navSerate">Serate</button>
   <button data-vista="vMetronomo" id="navMetronomo">Metronomo</button>
-  <button data-vista="vImpostazioni">Impostazioni</button>
   <button data-vista="vAdmin" id="navAdmin" hidden>Admin</button>
 </nav>
 

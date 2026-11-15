@@ -1,4 +1,4 @@
-/* DFAK – Repertorio · grafica (tema scuro; la stampa su bianco arriva in T7) */
+/* DFAK – Repertorio · grafica (tema scuro; stampa della scaletta su bianco dalla T7) */
 @font-face {
   font-family: 'Grenze Gotisch';
   src: url('caratteri/grenze-gotisch.woff2') format('woff2');
@@ -316,3 +316,81 @@ button.tap-grande { min-height: 120px; font-size: 34px; }
 .scelta-due button { margin: 0; border: 0; border-radius: 0; min-width: 64px; min-height: 44px; font-size: 26px; background: #1a1d29; color: var(--tenue); }
 .scelta-due button.scelto { background: var(--oro); color: #000; font-weight: 700; }
 .scelta-due button:disabled { opacity: .45; }
+
+/* ===== T7 · Serate, scaletta e stampa ===== */
+#testa .ingranaggio { flex: none; margin: 0; width: 40px; height: 40px; padding: 0; border-radius: 50%; background: transparent; border: 1px solid #3a4152; color: var(--tenue); font-size: 20px; line-height: 1; }
+#testa .ingranaggio.attivo { color: var(--oro); border-color: var(--oro); }
+button.riquadro.prossima { display: block; width: 100%; text-align: left; border: 1px solid var(--oro); background: #1d1a0c; color: var(--testo); font: inherit; }
+button.riquadro.prossima .etichetta-prossima { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--oro); }
+button.riquadro.prossima b { display: block; font-size: 19px; margin-top: 2px; }
+button.riquadro.prossima span { display: block; }
+ul.serate { list-style: none; padding: 0; margin: 10px 0; }
+ul.serate li { margin: 0 0 6px; }
+ul.serate button.serata { width: 100%; text-align: left; margin: 0; background: var(--carta); border: 1px solid var(--linea); color: var(--testo); font: inherit; padding: 10px 12px; }
+ul.serate button.serata b { display: block; font-size: 17px; }
+ul.serate button.serata .dove { display: block; color: var(--oro); }
+ul.serate button.serata .info { display: block; font-size: 13px; color: var(--tenue); }
+#boxPassate summary { cursor: pointer; color: var(--tenue); padding: 8px 0; }
+ul.scaletta li.sezione .num { display: inline-block; min-width: 1.7em; color: var(--oro); font-weight: 700; }
+ul.scaletta li.sezione .titolo { font-weight: 700; }
+ul.scaletta li.sezione .det { display: block; font-size: 13px; color: var(--tenue); }
+ul.scaletta li.sezione .det .doppio { color: #ffcf6e; }
+ul.scaletta li.sezione .det .sanno { color: #b9c3d6; }
+ul.scaletta li.speciale { background: #141826; border-style: dashed; }
+ul.scaletta li.speciale .titolo { font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: #cfd6e4; }
+ul.scaletta li.libera .titolo { font-weight: 400; text-transform: none; font-style: italic; }
+ul.scaletta li .orari { display: block; font-size: 13px; color: #9fb3ff; }
+.aggiungi { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.aggiungi button { margin: 0; flex: 1 1 40%; }
+#scTotale b { color: var(--oro); }
+ul.scegli { list-style: none; padding: 0; margin: 8px 0; }
+ul.scegli li { margin: 0 0 4px; }
+ul.scegli button { width: 100%; margin: 0; text-align: left; background: var(--carta); border: 1px solid var(--linea); color: var(--testo); font: inherit; padding: 9px 12px; display: flex; gap: 10px; align-items: center; }
+ul.scegli button .ordine { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 1px solid #4a5266; text-align: center; line-height: 26px; font-weight: 700; }
+ul.scegli button.scelto { border-color: var(--oro); }
+ul.scegli button.scelto .ordine { background: var(--oro); color: #000; border-color: var(--oro); }
+ul.scegli button .gia { font-size: 12px; color: #ffcf6e; margin-left: auto; }
+#scegliCerca { width: 100%; }
+#btnScegliOk { position: sticky; bottom: calc(var(--barra) + env(safe-area-inset-bottom) + 6px); width: 100%; }
+.solo-schermo #btnStampa { width: 100%; }
+
+/* Anteprima: il foglio A4 vero (186 mm di testo = 210 − 2 × 12 di margine), rimpicciolito per stare nello schermo */
+.anteprima { overflow: hidden; margin: 8px 0 16px; }
+.foglio { width: 186mm; padding: 12mm; box-sizing: content-box; background: #fff; color: #000; transform-origin: 0 0; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Sans Symbols', 'Noto Sans Symbols 2', sans-serif; }
+.foglio .pagina + .pagina { margin-top: 24mm; border-top: 1px dashed #999; padding-top: 6mm; }
+.foglio .testa-f { display: flex; align-items: center; gap: 5mm; border-bottom: 2pt solid #000; padding-bottom: 2.5mm; margin-bottom: 2.5mm; }
+.foglio .testa-f img { height: 13mm; width: auto; display: block; }
+.foglio .testa-f .tit-f { margin-left: auto; text-align: right; }
+.foglio .testa-f .tit-f b { display: block; font-family: 'Grenze Gotisch', serif; font-weight: 600; font-size: 26pt; line-height: 1; }
+.foglio .testa-f .tit-f span { display: block; font-size: 12pt; font-weight: 600; margin-top: 1mm; }
+.foglio .seguito { font-size: 12pt; font-weight: 700; margin-bottom: 2mm; }
+/* (non ovvio) una sola griglia per pagina e righe in "subgrid": le colonne (numero, tonalità, BPM, accordatura) sono larghe
+   quanto serve alla riga più larga e restano allineate da una riga all'altra, lasciando al titolo tutto il resto */
+.foglio .pagina { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; column-gap: calc(var(--fs, 28pt) * .35); align-content: start; }
+.foglio .pagina > * { grid-column: 1 / -1; }
+.foglio .r { display: grid; grid-template-columns: subgrid; column-gap: .45em; align-items: baseline; font-size: var(--fs, 28pt); line-height: 1.12; padding: .1em 0 .12em; border-bottom: .6pt solid #999; break-inside: avoid; }
+.foglio .r .num { font-weight: 800; text-align: right; }
+.foglio .r .tit { font-weight: 800; overflow-wrap: anywhere; }
+.foglio .r .ton, .foglio .r .bpm { font-size: .72em; font-weight: 700; white-space: nowrap; text-align: right; }
+.foglio .r .acc { font-size: .48em; font-weight: 700; white-space: nowrap; border: 1.2pt solid #000; padding: 0 .35em; align-self: center; justify-self: end; }
+.foglio .r .nota { grid-column: 2 / -1; font-size: .5em; font-weight: 400; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.foglio .r.libera .num { font-weight: 400; }
+.foglio .r.libera .tit { font-weight: 400; }
+.foglio .r.libera .min { font-size: .6em; white-space: nowrap; grid-column: 3 / -1; text-align: right; }
+.foglio .div { display: flex; justify-content: space-between; gap: 4mm; font-size: calc(var(--fs, 28pt) * .52); font-weight: 800; text-transform: uppercase; letter-spacing: .04em; border-top: 2pt solid #000; border-bottom: 2pt solid #000; margin: .25em 0; padding: .12em 0; break-inside: avoid; }
+.foglio .div span:last-child { text-transform: none; }
+.foglio .piede { text-align: right; font-size: 14pt; font-weight: 800; margin-top: 2.5mm; }
+.foglio .piede span { display: block; font-size: 12pt; font-weight: 600; }
+#righello { position: absolute; left: -9999px; top: 0; height: 273mm; width: 1px; }
+
+@page { size: A4 portrait; margin: 12mm; }
+@media print {
+  html, body { background: #fff !important; color: #000; padding: 0 !important; margin: 0; }
+  body > *:not(main) { display: none !important; }
+  main { max-width: none; padding: 0; margin: 0; }
+  main > *:not(#vStampa) { display: none !important; }
+  #vStampa > *:not(.anteprima) { display: none !important; }
+  .anteprima { overflow: visible; height: auto !important; margin: 0; }
+  .foglio { transform: none !important; padding: 0; width: auto; }
+  .foglio .pagina + .pagina { margin-top: 0; border-top: 0; padding-top: 0; break-before: page; }
+}

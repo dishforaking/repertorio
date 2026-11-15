@@ -10,10 +10,11 @@
  *     abbinamento alle sezioni), impostazione "Testi nelle sezioni", avvisi della bacheca.
  * T6: metronomo (colpi di una battuta con ottavi, shuffle e accento; piano che segue la struttura o libero;
  *     rallentamento; durata del piano).
+ * T7: serate e scaletta (righe brano / pausa / bis / libera, set e orari, riga del foglio stampato).
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 5;
-  var TAPPA = 6;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
+  var VERSIONE_REGOLE = 6;
+  var TAPPA = 7;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
   var MEMBRI = [
@@ -841,6 +842,223 @@ var Regole = (function () {
     return tot;
   }
 
+
+  /* ================= T7 · Serate e scaletta =================
+   * Una serata ha data (testo "aaaa-mm-gg"), locale, orario d'inizio facoltativo ("hh:mm") e note.
+   * La scaletta è una lista di righe: brano, pausa (minuti), bis (divisorio) e riga libera (testo + minuti facoltativi).
+   * Le durate sono SOLO musica (decisione 1A): la somma dei brani; i minuti delle righe libere si scrivono a parte.
+   */
+  var TIPI_RIGA = ['brano', 'pausa', 'bis', 'libera'];
+  var MAX_SCALETTA = 60, PAUSA_MIN = 1, PAUSA_MAX = 120, PAUSA_PROPOSTA = 15;
+  var MAX_LIBERA = 60, MAX_MINUTI_LIBERA = 120, MAX_NOTA_RIGA = 200;
+  var MAX_LOCALE = 80, MAX_NOTE_SERATA = 500;
+  var GIORNI_SETT = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+  var MESI = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+
+  /** "2026-12-12" valida (anche il 29 febbraio solo negli anni bisestili); altrimenti null. */
+  function leggiData(t) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(vuoto(t) ? '' : t).trim());
+    if (!m) return null;
+    var a = Number(m[1]), me = Number(m[2]), g = Number(m[3]);
+    var d = new Date(Date.UTC(a, me - 1, g));
+    if (a < 2000 || a > 2100 || d.getUTCMonth() !== me - 1 || d.getUTCDate() !== g) return null;
+    return m[0];
+  }
+  /** Orario scritto come viene dalla tastiera: "22:00", "22.00", "22,00", "2200", "22" → "22:00"; "" se vuoto; null se non si capisce. */
+  function leggiOrario(t) {
+    t = String(vuoto(t) ? '' : t).trim();
+    if (!t) return '';
+    var m = /^(\d{1,2})(?:[:.,]?(\d{2}))?$/.exec(t);
+    if (!m) return null;
+    var h = Number(m[1]), mi = m[2] === undefined ? 0 : Number(m[2]);
+    if (h > 23 || mi > 59) return null;
+    return ('0' + h).slice(-2) + ':' + ('0' + mi).slice(-2);
+  }
+  /** "Sab 12 dicembre 2026" (con breve = true: "Sab 12/12"). */
+  function scriviData(data, breve) {
+    var d = leggiData(data);
+    if (!d) return '';
+    var x = new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))));
+    var g = GIORNI_SETT[x.getUTCDay()];
+    return breve ? g + ' ' + x.getUTCDate() + '/' + (x.getUTCMonth() + 1) : g + ' ' + x.getUTCDate() + ' ' + MESI[x.getUTCMonth()] + ' ' + x.getUTCFullYear();
+  }
+  /** Una serata è passata dal giorno dopo la sua data. oggi = "aaaa-mm-gg". Senza data non è né passata né prossima. */
+  function serataPassata(s, oggi) { var d = leggiData(s && s.data); return !!d && d < oggi; }
+  /** Serate prossime (dalla data di oggi, la più vicina prima) e passate (la più recente prima); senza data in fondo alle prossime. */
+  function ordinaSerate(serate, oggi) {
+    var prossime = [], passate = [], senzaData = [];
+    (serate || []).forEach(function (s) {
+      if (!leggiData(s.data)) senzaData.push(s); else if (s.data < oggi) passate.push(s); else prossime.push(s);
+    });
+    var ora_ = function (s) { return leggiOrario(s.orario) || ''; };
+    prossime.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : ora_(a) < ora_(b) ? -1 : ora_(a) > ora_(b) ? 1 : 0; });
+    passate.sort(function (a, b) { return a.data > b.data ? -1 : a.data < b.data ? 1 : 0; });
+    return { prossime: prossime.concat(senzaData), passate: passate, prossima: prossime[0] || null };
+  }
+
+  /** Controlla una serata. Restituisce { valori, errori }. */
+  function normalizzaSerata(d) {
+    d = d || {};
+    var v = {}, errori = [];
+    v.id = d.id;
+    if (!idValido(d.id)) errori.push('id');
+    v.data = leggiData(d.data) || '';
+    if (!v.data) errori.push('data');           // la data serve: la serata si salva appena c'è
+    v.locale = testo(d.locale, MAX_LOCALE);
+    var o = leggiOrario(d.orario);
+    if (o === null) errori.push('orario'); else v.orario = o;
+    v.note = testo(d.note, MAX_NOTE_SERATA);
+    return { valori: v, errori: errori };
+  }
+
+  /** Controlla una riga di scaletta. Il testo della riga libera sta in "nota". */
+  function normalizzaRigaScaletta(d) {
+    d = d || {};
+    var v = {}, errori = [];
+    v.id = d.id;
+    if (!idValido(d.id)) errori.push('id');
+    v.tipo = vuoto(d.tipo) ? 'brano' : String(d.tipo);
+    if (TIPI_RIGA.indexOf(v.tipo) < 0) { errori.push('tipo'); return { valori: v, errori: errori }; }
+    v.brano = ''; v.minuti = ''; v.nota = '';
+    if (v.tipo === 'brano') {
+      v.brano = d.brano;
+      if (!idValido(d.brano)) errori.push('brano');
+      v.nota = testo(d.nota, MAX_NOTA_RIGA);
+    } else if (v.tipo === 'pausa') {
+      var p = interoFacoltativo(d.minuti, PAUSA_MIN, PAUSA_MAX);
+      if (p === null || p === '') errori.push('minuti'); else v.minuti = p;
+    } else if (v.tipo === 'libera') {
+      v.nota = testo(d.nota, MAX_LIBERA);
+      if (!v.nota) errori.push('nota');
+      var l = interoFacoltativo(d.minuti, 0, MAX_MINUTI_LIBERA);
+      if (l === null) errori.push('minuti'); else v.minuti = l === 0 ? '' : l;
+    }
+    return { valori: v, errori: errori };
+  }
+
+  /** Scaletta intera nell'ordine voluto: { valori (con ordine 1…n), errori = [{ indice, campi }] (indice −1 = la scaletta in sé) }. */
+  function normalizzaScaletta(lista) {
+    if (!lista || typeof lista.length !== 'number' || typeof lista === 'string') return { valori: [], errori: [{ indice: -1, campi: ['scaletta'] }] };
+    if (lista.length > MAX_SCALETTA) return { valori: [], errori: [{ indice: -1, campi: ['troppe'] }] };
+    var valori = [], errori = [], visti = {}, bis = -1;
+    for (var i = 0; i < lista.length; i++) {
+      var n = normalizzaRigaScaletta(lista[i]);
+      if (n.valori.id && visti[n.valori.id]) n.errori.push('doppione');
+      visti[n.valori.id] = true;
+      if (n.valori.tipo === 'bis') { if (bis >= 0) n.errori.push('secondoBis'); else bis = i; }
+      if (n.valori.tipo === 'pausa' && bis >= 0) n.errori.push('pausaDopoBis');
+      if (n.errori.length) errori.push({ indice: i, campi: n.errori });
+      n.valori.ordine = i + 1;
+      valori.push(n.valori);
+    }
+    return { valori: valori, errori: errori };
+  }
+
+  /** Solo i brani, nell'ordine della scaletta (serve alla T8). */
+  function braniInOrdine(righe) {
+    return (righe || []).filter(function (r) { return (r.tipo || 'brano') === 'brano' && r.brano; }).map(function (r) { return r.brano; });
+  }
+  /** Brani che compaiono più di una volta: { idBrano: volte }. */
+  function doppioniScaletta(righe) {
+    var c = {}, out = {};
+    braniInOrdine(righe).forEach(function (b) { c[b] = (c[b] || 0) + 1; });
+    for (var k in c) if (c[k] > 1) out[k] = c[k];
+    return out;
+  }
+
+  /** "hh:mm" + minuti → "hh:mm" (oltre la mezzanotte si riparte da 00:00). */
+  function sommaOrario(hhmm, minuti) {
+    var o = leggiOrario(hhmm);
+    if (!o) return '';
+    var t = (((Number(o.slice(0, 2)) * 60 + Number(o.slice(3, 5)) + Math.round(minuti)) % 1440) + 1440) % 1440;
+    return ('0' + Math.floor(t / 60)).slice(-2) + ':' + ('0' + (t % 60)).slice(-2);
+  }
+
+  /**
+   * Riepilogo della scaletta: set (divisi dalle pause), bis, totale e orari previsti.
+   * righe: nell'ordine; brani e sezioni: quelli del repertorio; orario: "hh:mm" o ''.
+   * Ogni set: { numero, righe: [indici], brani, secondi, minutiExtra, mancanti: [titoli], pausaDopo, inizio, fine }.
+   * Il bis: stessa forma con bis: true (null se non c'è). per riga: [{ tipo, numero (solo brani), set, inBis }].
+   * (non ovvio) secondi = solo i brani con durata; i mancanti si elencano e il set diventa "almeno".
+   * Gli orari usano i secondi + i minuti delle righe libere + le pause, arrotondati al minuto solo alla fine.
+   */
+  function riepilogoScaletta(righe, brani, sezioni, orario) {
+    righe = righe || [];
+    var perId = {}, sezPer = {};
+    (brani || []).forEach(function (b) { perId[b.id] = b; });
+    (sezioni || []).forEach(function (s) { (sezPer[s.brano] = sezPer[s.brano] || []).push(s); });
+    var nuovo = function (n, bis) { return { numero: n, bis: !!bis, righe: [], brani: 0, secondi: 0, minutiExtra: 0, mancanti: [], pausaDopo: 0, inizio: '', fine: '' }; };
+    var sets = [nuovo(1)], bis = null, corrente = sets[0], perRiga = [], numero = 0;
+    righe.forEach(function (r, i) {
+      var tipo = r.tipo || 'brano';
+      if (tipo === 'pausa') {
+        if (bis) { perRiga.push({ tipo: tipo, set: corrente.numero, inBis: true }); return; }   // (solo da un'unione) non spezza il bis
+        corrente.pausaDopo = Number(r.minuti) || 0;
+        perRiga.push({ tipo: tipo, set: corrente.numero, inBis: false });
+        corrente = nuovo(sets.length + 1); sets.push(corrente);
+        return;
+      }
+      if (tipo === 'bis') {
+        if (!bis) { bis = nuovo(0, true); corrente = bis; }
+        perRiga.push({ tipo: tipo, set: 0, inBis: true });
+        return;
+      }
+      corrente.righe.push(i);
+      if (tipo === 'libera') {
+        corrente.minutiExtra += Number(r.minuti) || 0;
+        perRiga.push({ tipo: tipo, set: corrente.numero, inBis: !!bis });
+        return;
+      }
+      numero++;
+      corrente.brani++;
+      perRiga.push({ tipo: 'brano', numero: numero, set: corrente.numero, inBis: !!bis });
+      var b = perId[r.brano];
+      var d = b ? durataEffettiva(b, sezPer[r.brano] || []) : { secondi: null };
+      if (d.secondi === null) corrente.mancanti.push(b ? String(b.titolo) : '(brano tolto)'); else corrente.secondi += d.secondi;
+    });
+    // l'ultimo set vuoto dopo una pausa finale non si mostra (la pausa resta, il set no)
+    if (sets.length > 1 && !sets[sets.length - 1].righe.length) sets.pop();
+    var tutte = sets.concat(bis ? [bis] : []);
+    var tot = { secondi: 0, minutiExtra: 0, mancanti: [], brani: 0 };
+    tutte.forEach(function (s) { tot.secondi += s.secondi; tot.minutiExtra += s.minutiExtra; tot.brani += s.brani; tot.mancanti = tot.mancanti.concat(s.mancanti); });
+    var o = leggiOrario(orario);
+    if (o) {
+      var minuti = 0;   // dall'inizio della serata, non arrotondati
+      tutte.forEach(function (s) {
+        s.inizio = sommaOrario(o, minuti);
+        minuti += s.secondi / 60 + s.minutiExtra;
+        s.fine = sommaOrario(o, minuti);
+        minuti += s.pausaDopo;
+      });
+    }
+    return { sets: sets, bis: bis, totale: tot, perRiga: perRiga, doppioni: doppioniScaletta(righe), conOrari: !!o };
+  }
+
+  /** Durata di un set già scritta: "42:10", "42:10 + 5 min", "almeno 38:40"; '' se non c'è niente. */
+  function scriviDurataSet(s) {
+    var base = s.secondi > 0 ? (s.secondi >= 3600 ? Math.floor(s.secondi / 3600) + ':' + ('0' + Math.floor((s.secondi % 3600) / 60)).slice(-2) + ':' + ('0' + (s.secondi % 60)).slice(-2) : scriviDurata(s.secondi)) : (s.mancanti.length ? '0:00' : '');
+    if (base && s.mancanti.length) base = 'almeno ' + base;
+    if (s.minutiExtra) base = (base ? base + ' + ' : '') + s.minutiExtra + ' min';
+    return base;
+  }
+
+  /** Simbolo della nota del BPM per la stampa ('' per i quarti: il caso normale non si scrive). */
+  var NOTA_STAMPA = { 'Quarti': '', 'Ottavi': '♪', 'Quarti puntati': '♩.', 'Minime': 'minima' };
+  /**
+   * Una riga del foglio stampato: { titolo, tonalita, bpm, accordatura }.
+   * Accordatura solo quando cambia rispetto al brano prima; sul primo brano solo se non è Mib (e non è vuota).
+   */
+  function rigaStampa(brano, precedente, notazione) {
+    brano = brano || {};
+    var t = tonalitaBrano(brano, notazione, false);
+    var bpm = vuoto(brano.bpm) ? '' : String(brano.bpm);
+    var nota = NOTA_STAMPA[brano.riferimento || 'Quarti'];
+    if (bpm && nota) bpm = nota + ' ' + bpm;
+    var acc = String(brano.accordatura || '');
+    var mostra = precedente ? acc !== String(precedente.accordatura || '') : (acc !== '' && acc !== 'Mib');
+    return { titolo: String(brano.titolo || '(brano tolto)').toUpperCase(), tonalita: t.suonata ? t.testo : '', bpm: bpm, accordatura: mostra ? (acc || 'accordatura ?') : '' };
+  }
+
   return {
     VERSIONE_REGOLE: VERSIONE_REGOLE,
     TAPPA: TAPPA,
@@ -936,6 +1154,28 @@ var Regole = (function () {
     pianoLibero: pianoLibero,
     pianoMetronomo: pianoMetronomo,
     secondiBattito: secondiBattito,
-    durataPiano: durataPiano
+    durataPiano: durataPiano,
+    TIPI_RIGA: TIPI_RIGA,
+    MAX_SCALETTA: MAX_SCALETTA,
+    PAUSA_MIN: PAUSA_MIN,
+    PAUSA_MAX: PAUSA_MAX,
+    PAUSA_PROPOSTA: PAUSA_PROPOSTA,
+    MAX_LIBERA: MAX_LIBERA,
+    MAX_MINUTI_LIBERA: MAX_MINUTI_LIBERA,
+    MAX_NOTA_RIGA: MAX_NOTA_RIGA,
+    leggiData: leggiData,
+    leggiOrario: leggiOrario,
+    scriviData: scriviData,
+    serataPassata: serataPassata,
+    ordinaSerate: ordinaSerate,
+    normalizzaSerata: normalizzaSerata,
+    normalizzaRigaScaletta: normalizzaRigaScaletta,
+    normalizzaScaletta: normalizzaScaletta,
+    braniInOrdine: braniInOrdine,
+    doppioniScaletta: doppioniScaletta,
+    sommaOrario: sommaOrario,
+    riepilogoScaletta: riepilogoScaletta,
+    scriviDurataSet: scriviDurataSet,
+    rigaStampa: rigaStampa
   };
 })();
