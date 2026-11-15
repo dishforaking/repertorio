@@ -35,6 +35,7 @@
       <span id="prossimaDove"></span>
       <span class="tenue piccolo" id="prossimaScaletta"></span>
     </button>
+    <button type="button" id="btnPalcoProssima" class="palco-entra" hidden>▶ Palco della prossima serata</button>
     <div class="riquadro" id="riquadroDaSistemare">
       <h2>Da sistemare</h2>
       <ul class="bacheca" id="listaDaSistemare"></ul>
@@ -160,6 +161,7 @@
         </div>
       </fieldset>
       <button type="button" id="btnLettura" class="secondario">Leggi tutto il testo</button>
+      <button type="button" id="btnPalcoBrano" class="palco-entra">▶ Palco</button>
       <div class="esito" id="esitoStruttura" hidden></div>
     </div>
 
@@ -298,6 +300,9 @@
       <div class="esito" id="esitoScaletta" hidden></div>
     </div>
     <div class="riquadro">
+      <button type="button" id="btnPalcoSerata" class="palco-entra">▶ Palco</button>
+      <button type="button" id="btnFilePalco" class="secondario">Scarica per il palco</button>
+      <p class="tenue piccolo">"Scarica per il palco" salva un file che si apre senza rete anche dove l'app non c'è.</p>
       <button type="button" id="btnAnteprima">Anteprima di stampa</button>
       <button type="button" id="btnDuplica" class="secondario">Duplica serata</button>
     </div>
@@ -326,6 +331,31 @@
       <p class="tenue piccolo" id="stampaInfo">Il foglio esce così. Dalla finestra di stampa scegli la stampante oppure "Salva come PDF".</p>
     </div>
     <div class="anteprima" id="anteprima"><div id="foglioStampa" class="foglio"></div></div>
+  </section>
+
+  <section id="vPalco" class="vista" hidden data-car="Molto grandi">
+    <div class="palco-testa" id="palcoTesta">
+      <div class="riga1">
+        <button type="button" id="btnPalcoEsci" class="secondario" aria-label="Esci dal palco">◀</button>
+        <span id="pPosizione"></span>
+        <b id="pTitolo"></b>
+        <b id="pConta" class="palco-conta" hidden></b>
+      </div>
+      <div id="pInfo"></div>
+      <p id="pNota" hidden></p>
+      <p id="pModo" hidden></p>
+    </div>
+    <p id="pPrima" class="palco-speciale" hidden></p>
+    <ol class="palco-sezioni" id="pSezioni"></ol>
+    <p id="pDopo" class="palco-speciale"></p>
+    <div class="palco-comandi">
+      <button type="button" id="pSezPrec" aria-label="Sezione precedente">‹</button>
+      <button type="button" id="pStart">▶ Start</button>
+      <button type="button" id="pSezSucc" aria-label="Sezione successiva">›</button>
+      <button type="button" id="pBranoPrec" class="secondario brano-palco">‹‹ brano</button>
+      <span id="pStato" class="palco-stato"></span>
+      <button type="button" id="pBranoSucc" class="secondario brano-palco">brano ››</button>
+    </div>
   </section>
 
   <section id="vImpostazioni" class="vista" hidden>

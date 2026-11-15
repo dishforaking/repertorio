@@ -11,10 +11,11 @@
  * T6: metronomo (colpi di una battuta con ottavi, shuffle e accento; piano che segue la struttura o libero;
  *     rallentamento; durata del piano).
  * T7: serate e scaletta (righe brano / pausa / bis / libera, set e orari, riga del foglio stampato).
+ * T8: Modalità Palco (piano del palco dal piano del metronomo, sezione al tempo, "poi:" per almeno 2 s) e file per la serata.
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 6;
-  var TAPPA = 7;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
+  var VERSIONE_REGOLE = 7;
+  var TAPPA = 8;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
   var MEMBRI = [
@@ -1059,6 +1060,176 @@ var Regole = (function () {
     return { titolo: String(brano.titolo || '(brano tolto)').toUpperCase(), tonalita: t.suonata ? t.testo : '', bpm: bpm, accordatura: mostra ? (acc || 'accordatura ?') : '' };
   }
 
+  /* ================= T8 · Modalità Palco e file per la serata =================
+   * Il piano del palco si ricava dal piano del metronomo (T6): stessi tratti, quindi lo stesso tempo del click.
+   * I secondi sono a tempo 100; con un rallentamento si moltiplicano per 100 / tempo (lo fa sezioneAlTempo).
+   * Decisione D2 (15/11/2026): "poi: …" nell'ultima battuta della sezione, ma per almeno 2 secondi.
+   */
+  var POI_MIN_SECONDI = 2;
+  var CARATTERI_PALCO = { 'Grandi': 26, 'Molto grandi': 34, 'Enormi': 44 };   // px del testo della sezione corrente a 390 px
+
+  /**
+   * Righe della scaletta per il palco: un elemento per brano, con la sua nota di riga e cosa viene dopo (pausa, riga libera, bis).
+   * esiste(id), se c'è, salta i brani tolti dal repertorio: ciò che veniva dopo passa al brano precedente.
+   */
+  function vociPalco(righe, esiste) {
+    var out = [], prima = [];
+    (righe || []).forEach(function (r) {
+      var tipo = r.tipo || 'brano';
+      if (tipo === 'brano') {
+        if (!r.brano || (esiste && !esiste(r.brano))) return;
+        out.push({ brano: r.brano, nota: String(r.nota || ''), prima: prima, dopo: [] }); prima = []; return;
+      }
+      var x = { tipo: tipo, testo: tipo === 'pausa' ? 'PAUSA' : tipo === 'bis' ? 'BIS' : String(r.nota || ''), minuti: vuoto(r.minuti) ? '' : Number(r.minuti) };
+      if (out.length) out[out.length - 1].dopo.push(x); else prima.push(x);
+    });
+    return out;
+  }
+  /** "PAUSA 15 min", "› Sindaco che parla 5 min", "BIS". */
+  function scriviRigaSpeciale(x) {
+    if (x.tipo === 'bis') return 'BIS';
+    var t = x.tipo === 'pausa' ? 'PAUSA' : '› ' + x.testo;
+    return t + (x.minuti ? ' ' + x.minuti + ' min' : '');
+  }
+
+  /**
+   * Piano del palco: { modo: 'struttura' | 'mano', motivo, conteggio (s), sezioni: [{ sezione, nome, inizio, fine, secBattuta, battute, battutePoi, inizioPoi }], durata }.
+   * Con "mano" (struttura incompleta, senza BPM) la sezione si sposta solo a mano, e il motivo lo dice.
+   * opzioni: come il metronomo ({ daSezione, conteggio }).
+   */
+  function pianoPalco(brano, sezioni, opzioni) {
+    var p = pianoMetronomo(brano, sezioni, opzioni || {});
+    if (p.modo !== 'struttura') {
+      var motivo = p.modo === 'nessuno' ? 'scrivi il BPM del brano' : String(p.motivo || '').replace(/^libero: /, '');
+      return { modo: 'mano', motivo: 'scorrimento a mano' + (motivo ? ': ' + motivo : ''), conteggio: 0, sezioni: [], durata: null };
+    }
+    var t = 0, cont = 0, out = [];
+    p.tratti.forEach(function (tr) {
+      var sb = tr.battitiBattuta * 60 / tr.bpm, n = tr.battute * tr.giri, dur = n * sb;
+      if (tr.conteggio) { cont += dur; t += dur; return; }
+      var nPoi = Math.min(n, Math.max(1, Math.ceil(POI_MIN_SECONDI / sb - 1e-9)));
+      out.push({ sezione: tr.sezione, nome: tr.nome, inizio: t, fine: t + dur, secBattuta: sb, battute: n, battutePoi: nPoi, inizioPoi: t + dur - nPoi * sb });
+      t += dur;
+    });
+    return { modo: 'struttura', motivo: '', conteggio: cont, sezioni: out, durata: t - cont };
+  }
+
+  /**
+   * Dove si è dopo "secondi" dallo start (conteggio compreso), con il rallentamento "tempo" (100 = scritto).
+   * { stato: 'attesa' | 'conteggio' | 'sezione' | 'fine', indice, sezione, battuta, poi }. Serve anche alla T8-sync.
+   */
+  function sezioneAlTempo(piano, secondi, tempo) {
+    if (!piano || piano.modo !== 'struttura' || !piano.sezioni.length) return null;
+    var s = Number(secondi) * (Number(tempo) || 100) / 100, E = 1e-9, ss = piano.sezioni, ultima = ss.length - 1;
+    var base = function (i) { return { indice: i, sezione: ss[i].sezione, nome: ss[i].nome, battuta: 0, poi: false }; };
+    var o;
+    if (s < 0) { o = base(0); o.stato = 'attesa'; return o; }
+    if (s < piano.conteggio - E) { o = base(0); o.stato = 'conteggio'; return o; }
+    if (s >= ss[ultima].fine - E) { o = base(ultima); o.stato = 'fine'; return o; }
+    for (var i = 0; i <= ultima; i++) {
+      if (s < ss[i].fine - E) {
+        o = base(i); o.stato = 'sezione';
+        o.battuta = Math.min(ss[i].battute, Math.floor((s - ss[i].inizio) / ss[i].secBattuta + E) + 1);
+        o.poi = i < ultima && s >= ss[i].inizioPoi - E;
+        return o;
+      }
+    }
+    o = base(ultima); o.stato = 'fine'; return o;
+  }
+
+  /** Nome del file (e del PDF): "2026-12-12 Bar Test - Palco Dish for a King"; caratteri vietati nei nomi dei file tolti. */
+  function nomeFileSerata(serata, cosa) {
+    var locale = String((serata && serata.locale) || '').replace(/[\/\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+    return [(serata && serata.data) || '', locale].filter(function (x) { return x; }).join(' ') + ' - ' + cosa + ' Dish for a King';
+  }
+
+  function html(t) {
+    return String(vuoto(t) ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  /** Eccezioni di chi suona per la vista: con "evidenzia solo me" le mie in rilievo e quelle degli altri attenuate. */
+  function eccezioniHtml(chiSuona, sigla, soloMe) {
+    var g = gruppiChiSuona(chiSuona), out = [];
+    var una = function (sg, tipo) {
+      var cl = 'eccez ' + tipo + (soloMe ? (sg === sigla ? ' mia' : ' altri') : '');
+      out.push('<span class="' + cl + '">' + (tipo === 'tacet' ? 'tacet ' : '★ ') + html(sg) + '</span>');
+    };
+    g.tacet.forEach(function (sg) { una(sg, 'tacet'); });
+    g.stella.forEach(function (sg) { una(sg, 'stella'); });
+    return out.join(' ');
+  }
+
+  /**
+   * File "Prepara per la serata" (decisioni T8: senza JavaScript, scuro con il logo scuro, personale).
+   * d = { serata, righe, brani, sezioni, testi, notazione, sigla, evidenziaSoloMe, caratteri, logo (testo SVG), generato }.
+   * Restituisce il documento HTML intero.
+   */
+  function fileSerata(d) {
+    d = d || {};
+    var s = d.serata || {}, brani = d.brani || [], tutte = d.sezioni || [], testi = d.testi || [];
+    var px = CARATTERI_PALCO[d.caratteri] || CARATTERI_PALCO['Molto grandi'];
+    var trova = function (lista, id) { for (var i = 0; i < lista.length; i++) if (lista[i].id === id) return lista[i]; return null; };
+    var voci = vociPalco(d.righe, function (id) { return !!trova(brani, id); });
+    var dati = [scriviData(s.data), s.locale, s.orario ? 'ore ' + s.orario : ''].filter(function (x) { return x; }).join(' · ');
+    var css = 'body{margin:0;background:#0b0c10;color:#eceff4;font:' + Math.round(px * 0.62) + 'px/1.35 system-ui,-apple-system,Roboto,"Noto Sans",sans-serif}'
+      + 'main{max-width:760px;margin:0 auto;padding:12px 14px 40px}a{color:#E7C846}'
+      + '.logo svg{width:100%;height:auto;max-width:460px;display:block;margin:0 auto}'
+      + 'h1{color:#E7C846;text-align:center;letter-spacing:4px;margin:8px 0 2px;font-size:1.3em}'
+      + '.dati{text-align:center;margin:0 0 4px}.chi{text-align:center;color:#9aa3b2;font-size:.6em;margin:0 0 14px}'
+      + '.scaletta ol{list-style:none;padding:0;margin:0 0 18px}.scaletta li{padding:7px 0;border-bottom:1px solid #262a35}'
+      + '.scaletta a{text-decoration:none;color:#eceff4;font-weight:700}.scaletta .info{color:#9aa3b2;font-size:.75em;margin-left:6px}'
+      + '.sep{color:#E7C846;font-weight:700;letter-spacing:1px}.sep.libera{color:#eceff4;font-weight:400;letter-spacing:0}'
+      + '.brano{border-top:3px solid #E7C846;padding-top:10px;margin-top:26px}'
+      + '.testa .n{color:#9aa3b2;font-size:.7em}.testa h2{margin:0;font-size:1.15em;letter-spacing:.5px}'
+      + '.testa .info{color:#E7C846;font-weight:700;margin:2px 0}.testa .nota{color:#eceff4;font-style:italic;margin:4px 0}'
+      + '.sez{background:#16181f;border:1px solid #262a35;border-radius:10px;padding:8px 12px;margin:10px 0}'
+      + '.sez h3{margin:0 0 4px;font-size:.8em;color:#E7C846;text-transform:uppercase;letter-spacing:1px}'
+      + '.sez .notasez{color:#9aa3b2;font-size:.75em;margin:0 0 4px}'
+      + '.parole{white-space:pre-wrap;margin:0;font-size:' + Math.round(px / (px * 0.62) * 100) / 100 + 'em;line-height:1.25}'
+      + '.eccez{font-size:.75em;margin-left:6px;padding:1px 6px;border-radius:6px;border:1px solid #262a35;font-weight:400;text-transform:none;letter-spacing:0;color:#eceff4}'
+      + '.eccez.tacet{color:#ff8a80}.eccez.stella{color:#E7C846}.eccez.altri{opacity:.45}.eccez.mia{border-color:currentColor;font-weight:700}'
+      + '.sez.mio-tacet{opacity:.55}.dopo{color:#E7C846;font-weight:700;margin:12px 0}'
+      + '.vai{display:flex;justify-content:space-between;gap:12px;margin:14px 0 0;font-size:.85em}.vai a{padding:10px 0}';
+    var h = ['<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
+      '<title>' + html(nomeFileSerata(s, 'Palco')) + '</title><style>' + css + '</style></head><body><main>',
+      '<header id="inizio"><div class="logo">' + (d.logo || '') + '</div><h1>PALCO</h1>',
+      '<p class="dati">' + html(dati) + '</p>',
+      '<p class="chi">Preparato per ' + html(d.sigla || '') + (d.generato ? ' · ' + html(d.generato) : '') + ' · si apre senza rete</p></header>'];
+    // scaletta con i link ai brani
+    h.push('<nav class="scaletta"><ol>');
+    var sep = function (x) { return '<li class="sep' + (x.tipo === 'libera' ? ' libera' : '') + '">' + html(scriviRigaSpeciale(x)) + '</li>'; };
+    voci.forEach(function (v, i) {
+      v.prima.forEach(function (x) { h.push(sep(x)); });
+      var b = trova(brani, v.brano), rs = rigaStampa(b, i ? trova(brani, voci[i - 1].brano) : null, d.notazione);
+      h.push('<li><a href="#b' + (i + 1) + '">' + (i + 1) + ' ' + html(rs.titolo) + '</a><span class="info">' + html([rs.tonalita, rs.bpm, rs.accordatura].filter(function (x) { return x; }).join(' · ')) + '</span></li>');
+      v.dopo.forEach(function (x) { h.push(sep(x)); });
+    });
+    if (!voci.length) h.push('<li>Scaletta vuota.</li>');
+    h.push('</ol></nav>');
+    // i brani
+    voci.forEach(function (v, i) {
+      var b = trova(brani, v.brano), rs = rigaStampa(b, i ? trova(brani, voci[i - 1].brano) : null, d.notazione);
+      var sez = tutte.filter(function (x) { return x.brano === v.brano; }).sort(function (a, c) { return a.ordine - c.ordine; });
+      var nomi = nomiSezioni(sez);
+      h.push('<section class="brano" id="b' + (i + 1) + '"><div class="testa"><span class="n">' + (i + 1) + '/' + voci.length + '</span>');
+      h.push('<h2>' + html(rs.titolo) + '</h2><p class="info">' + html([rs.tonalita, rs.bpm, rs.accordatura].filter(function (x) { return x; }).join(' · ')) + '</p>');
+      if (v.nota) h.push('<p class="nota">' + html(v.nota) + '</p>');
+      h.push('</div>');
+      if (!sez.length) h.push('<p class="chi">Struttura non ancora scritta.</p>');
+      sez.forEach(function (x, k) {
+        var t = trova(testi, x.testo), mia = (leggiChiSuona(x.chiSuona) || {})[d.sigla];
+        h.push('<div class="sez' + (mia === 'tacet' ? ' mio-tacet' : '') + '"><h3>' + html(nomi[k] + (Number(x.ripetizioni) > 1 ? ' ×' + x.ripetizioni : '')) + ' ' + eccezioniHtml(x.chiSuona, d.sigla, !!d.evidenziaSoloMe) + '</h3>');
+        if (x.nota) h.push('<p class="notasez">' + html(x.nota) + '</p>');
+        if (t && t.testo) h.push('<p class="parole">' + html(t.testo) + '</p>');
+        h.push('</div>');
+      });
+      if (v.dopo.length) h.push('<p class="dopo">dopo: ' + html(v.dopo.map(scriviRigaSpeciale).join(' · ')) + '</p>');
+      var dopoB = voci[i + 1] ? trova(brani, voci[i + 1].brano) : null;
+      h.push('<nav class="vai"><a href="#inizio">↑ scaletta</a>' + (dopoB ? '<a href="#b' + (i + 2) + '">brano ›› ' + (i + 2) + ' ' + html(String(dopoB.titolo || '').toUpperCase()) + '</a>' : '<span>fine della scaletta</span>') + '</nav></section>');
+    });
+    h.push('</main></body></html>');
+    return h.join('\n');
+  }
+
   return {
     VERSIONE_REGOLE: VERSIONE_REGOLE,
     TAPPA: TAPPA,
@@ -1176,6 +1347,14 @@ var Regole = (function () {
     sommaOrario: sommaOrario,
     riepilogoScaletta: riepilogoScaletta,
     scriviDurataSet: scriviDurataSet,
-    rigaStampa: rigaStampa
+    rigaStampa: rigaStampa,
+    POI_MIN_SECONDI: POI_MIN_SECONDI,
+    CARATTERI_PALCO: CARATTERI_PALCO,
+    vociPalco: vociPalco,
+    scriviRigaSpeciale: scriviRigaSpeciale,
+    pianoPalco: pianoPalco,
+    sezioneAlTempo: sezioneAlTempo,
+    nomeFileSerata: nomeFileSerata,
+    fileSerata: fileSerata
   };
 })();

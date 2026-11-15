@@ -384,6 +384,49 @@ ul.scegli button .gia { font-size: 12px; color: #ffcf6e; margin-left: auto; }
 #righello { position: absolute; left: -9999px; top: 0; height: 273mm; width: 1px; }
 
 @page { size: A4 portrait; margin: 12mm; }
+/* ---------- T8 · Modalità Palco (tema scuro, tutto lo schermo; grandezza dall'impostazione "Caratteri in Modalità Palco") ---------- */
+button.palco-entra { background: #3a2f0b; border-color: var(--oro); color: var(--oro); font-weight: 700; }
+#btnPalcoProssima { display: block; width: 100%; margin: -4px 0 12px; }
+body.in-palco #testa, body.in-palco #barra, body.in-palco .versioni, body.in-palco #barraMetro { display: none !important; }
+body.in-palco { padding-bottom: 0; }
+body.in-palco main { max-width: 760px; padding: 0 10px; }
+#vPalco { --fp: 34px; padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+#vPalco[data-car="Grandi"] { --fp: 26px; }
+#vPalco[data-car="Enormi"] { --fp: 44px; }
+.palco-testa { position: sticky; top: 0; z-index: 5; background: #000; border-bottom: 2px solid var(--oro); padding: calc(6px + env(safe-area-inset-top)) 4px 6px; margin: 0 -10px; padding-left: 10px; padding-right: 10px; }
+.palco-testa .riga1 { display: flex; align-items: center; gap: 8px; }
+#btnPalcoEsci { margin: 0; padding: 4px 12px; min-height: 40px; font-size: 18px; }
+#pPosizione { color: var(--tenue); font-size: calc(var(--fp) * .5); white-space: nowrap; }
+#pTitolo { flex: 1; min-width: 0; font-size: calc(var(--fp) * .8); line-height: 1.1; letter-spacing: .5px; overflow-wrap: anywhere; }
+.palco-conta { font-size: calc(var(--fp) * 1.1); color: #7fd27f; min-width: 1.2em; text-align: center; }
+#pInfo { color: var(--oro); font-weight: 700; font-size: calc(var(--fp) * .6); margin-top: 2px; }
+#pNota { font-style: italic; font-size: calc(var(--fp) * .5); margin: 2px 0 0; }
+#pModo { color: var(--tenue); font-size: 14px; margin: 2px 0 0; }
+.palco-speciale { color: var(--oro); font-weight: 700; text-align: center; font-size: calc(var(--fp) * .55); margin: 10px 0; }
+.palco-sezioni { list-style: none; padding: 0; margin: 8px 0; }
+.palco-sezioni li { background: var(--carta); border: 1px solid var(--linea); border-radius: 10px; padding: 6px 10px; margin: 6px 0; font-size: calc(var(--fp) * .5); scroll-margin-top: var(--alto-testa, 120px); cursor: pointer; }
+.palco-sezioni li.vuota { color: var(--tenue); cursor: default; }
+.palco-sezioni .r1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.palco-sezioni .nome { color: var(--oro); text-transform: uppercase; letter-spacing: 1px; }
+.palco-sezioni .eccez { font-size: .8em; }
+.palco-sezioni .eccez.altri { opacity: .45; }
+.palco-sezioni .notasez { display: block; color: var(--tenue); font-size: .9em; }
+.palco-sezioni .prima { display: block; color: var(--tenue); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.palco-sezioni .parole { display: none; white-space: pre-wrap; margin: 6px 0 0; font-size: var(--fp); line-height: 1.22; color: #fff; }
+.palco-sezioni li.mio-tacet { opacity: .55; }
+.palco-sezioni li.corrente { border: 3px solid var(--oro); padding: 10px 12px; opacity: 1; }
+.palco-sezioni li.corrente .nome { font-size: 1.2em; }
+.palco-sezioni li.corrente .parole { display: block; }
+.palco-sezioni li.corrente .prima { display: none; }
+.palco-sezioni .poi { display: none; margin: 10px 0 0; padding: 6px 10px; border-radius: 8px; background: #3a2f0b; border: 1px solid var(--oro); color: var(--oro); font-weight: 700; font-size: calc(var(--fp) * .6); }
+.palco-sezioni li.corrente.con-poi .poi { display: block; }
+.palco-comandi { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: #000; border-top: 2px solid var(--oro); padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: 1fr 1.6fr 1fr; gap: 6px 8px; align-items: center; }
+.palco-comandi button { margin: 0; min-height: 58px; font-size: 26px; font-weight: 700; touch-action: manipulation; }
+#pStart { font-size: 20px; background: #1d4d2a; border-color: #7fd27f; }
+#pStart.suona { background: var(--rosso); border-color: #e05a52; }
+.palco-comandi button.brano-palco { min-height: 44px; font-size: 16px; font-weight: 400; }
+.palco-stato { text-align: center; color: var(--tenue); font-size: 13px; }
+
 @media print {
   html, body { background: #fff !important; color: #000; padding: 0 !important; margin: 0; }
   body > *:not(main) { display: none !important; }

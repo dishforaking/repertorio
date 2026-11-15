@@ -188,7 +188,9 @@ function disegna() {
   if (!conosciuto) return vai('vNessuno');
   // T5: mentre si inserisce un testo o si legge, i dati nuovi non portano via dalla schermata (T7: idem scelta brani e anteprima)
   if (!$('vTesto').hidden || !$('vLettura').hidden || !$('vScegli').hidden || !$('vStampa').hidden) { aggiornaRete(); return; }
+  if (!$('vPalco').hidden && palco) { aggiornaRete(); return; }   // T8: sul palco i dati nuovi non spostano niente
   let corrente = memoria.get('vista') || 'vInizio';
+  if (corrente === 'vPalco') corrente = memoria.get('palcoDa') === 'brano' ? 'vBrano' : memoria.get('palcoDa') === 'serata' ? 'vSerata' : 'vInizio';
   if (corrente === 'vTesto' || corrente === 'vLettura') corrente = 'vBrano';
   if (corrente === 'vAdmin' && !stato.admin) corrente = 'vInizio';
   if (corrente === 'vImpostazioni' && !me) corrente = 'vInizio';
@@ -213,11 +215,12 @@ function disegna() {
 
 function vai(vista) {
   if (vista !== 'vStampa' && typeof TITOLO_APP !== 'undefined') document.title = TITOLO_APP;   // variante T7: il nome del PDF vale solo nell'anteprima
-  if (metro.inCorso() && ((metroDove === 'brano' && !['vBrano', 'vLettura'].includes(vista)) || (metroDove === 'solo' && vista !== 'vMetronomo'))) metro.ferma();
+  if (metro.inCorso() && ((metroDove === 'brano' && !['vBrano', 'vLettura'].includes(vista)) || (metroDove === 'solo' && vista !== 'vMetronomo') || (metroDove === 'palco' && vista !== 'vPalco'))) metro.ferma();
+  document.body.classList.toggle('in-palco', vista === 'vPalco');   // T8: il palco usa tutto lo schermo (niente testata e barra)
   if (vista === 'vMetronomo') preparaSolo();
   if (vista !== 'vMetronomo') tocchiSolo = [];
   document.querySelectorAll('.vista').forEach((v) => { v.hidden = v.id !== vista; });
-  const voce = ['vBrano', 'vTesto', 'vLettura'].includes(vista) ? 'vRepertorio' : ['vSerata', 'vScegli', 'vStampa'].includes(vista) ? 'vSerate' : vista;
+  const voce = ['vBrano', 'vTesto', 'vLettura'].includes(vista) ? 'vRepertorio' : ['vSerata', 'vScegli', 'vStampa'].includes(vista) ? 'vSerate' : vista === 'vPalco' ? '' : vista;
   document.querySelectorAll('#barra button').forEach((b) => b.classList.toggle('attivo', b.dataset.vista === voce));
   $('btnImpostazioni').classList.toggle('attivo', vista === 'vImpostazioni');   // T7 (decisione 2B): le impostazioni sono la ⚙ in testata
   if (!['vBrano', 'vTesto', 'vLettura'].includes(vista)) tornaSerata = null;
@@ -1983,6 +1986,7 @@ function disegnaSerate() {
     $('prossimaDove').textContent = (p.locale || 'locale da scrivere') + (p.orario ? ' · ore ' + p.orario : '');
     $('prossimaScaletta').textContent = infoScaletta(p);
   }
+  aggiornaIngressiPalco();   // T8: "▶ Palco della prossima serata"
 }
 $('riquadroProssima').addEventListener('click', () => { if ($('riquadroProssima').dataset.id) apriSerata($('riquadroProssima').dataset.id); });
 $('btnNuovaSerata').addEventListener('click', () => { if (puoScrivere('esitoSerate')) apriSerata(null); });
@@ -2517,6 +2521,219 @@ function nomeFileStampa(s) {
 }
 $('btnStampa').addEventListener('click', () => { if (serataAperta) document.title = nomeFileStampa(serataAperta); window.print(); });
 window.addEventListener('resize', () => { if (!$('vStampa').hidden) scalaAnteprima(); });
+
+/* ---------- T8 · Modalità Palco e file per la serata (progetto approvato il 15/11/2026: D1 A, D2 A, D3 A, D4 A) ----------
+ * Chi fa avanzare la sezione corrente è una "sorgente": 'mano' (‹ ›, tocco sulla sezione) o 'metronomo' (il click
+ * della T6 su questo telefono). La T8-sync aggiungerà la sorgente 'remota' (lo start che arriva dal telefono di
+ * Francesco), che userà Regole.sezioneAlTempo senza cambiare questa schermata.
+ */
+let palco = null;   // { voci, i, corrente, poi, da: 'serata' | 'brano', serata, suona, sorgente, piano, sezioni, conta }
+const sezioniDi = (id) => sezioniTutte().filter((x) => x.brano === id).sort((a, b) => a.ordine - b.ordine);
+const branoDi = (id) => brani().find((b) => b.id === id) || null;
+
+/** Righe della serata come sono adesso sul telefono (anche con una modifica non ancora salvata). */
+function righeSerataCorrenti() {
+  if (!serataAperta) return [];
+  return scal.serata === serataAperta.id ? scal.righe : righeDi(serataAperta.id);
+}
+function apriPalco(voci, da, serataId) {
+  voci = (voci || []).filter((v) => branoDi(v.brano));
+  if (!voci.length) return false;
+  palco = { voci, i: 0, corrente: 0, poi: false, da, serata: serataId || null, suona: false, sorgente: 'mano', conta: null };
+  memoria.set('palcoDa', da);
+  vai('vPalco');
+  disegnaPalco();
+  return true;
+}
+function caricaBranoPalco() {
+  const v = palco.voci[palco.i], b = branoDi(v.brano);
+  palco.sezioni = sezioniDi(v.brano);
+  palco.piano = Regole.pianoPalco(b, palco.sezioni, { conteggio: opzioniMetro().conteggio });
+  palco.corrente = 0; palco.poi = false; palco.conta = null;
+}
+function disegnaPalco() {
+  if (!palco) return;
+  caricaBranoPalco();
+  const imp = impostazioni(), me = io();
+  const v = palco.voci[palco.i], b = branoDi(v.brano), prima = palco.i ? branoDi(palco.voci[palco.i - 1].brano) : null;
+  const rs = Regole.rigaStampa(b, prima, imp.notazione);
+  $('vPalco').dataset.car = Regole.CARATTERI_PALCO[imp.caratteriPalco] ? imp.caratteriPalco : 'Molto grandi';
+  $('pPosizione').textContent = palco.voci.length > 1 ? (palco.i + 1) + '/' + palco.voci.length : '';
+  $('pTitolo').textContent = rs.titolo;
+  $('pInfo').textContent = [rs.tonalita, rs.bpm, rs.accordatura].filter(Boolean).join(' · ');
+  $('pNota').textContent = v.nota; $('pNota').hidden = !v.nota;
+  $('pModo').textContent = palco.piano.modo === 'mano' ? palco.piano.motivo : '';
+  $('pModo').hidden = palco.piano.modo !== 'mano';
+  $('pPrima').textContent = v.prima.map(Regole.scriviRigaSpeciale).join(' · '); $('pPrima').hidden = !v.prima.length;
+  const ultimo = palco.i === palco.voci.length - 1;
+  $('pDopo').textContent = v.dopo.length ? 'dopo: ' + v.dopo.map(Regole.scriviRigaSpeciale).join(' · ') : (palco.voci.length > 1 && ultimo ? 'fine della scaletta' : '');
+  const ol = $('pSezioni'); ol.textContent = '';
+  const nomi = Regole.nomiSezioni(palco.sezioni);
+  if (!palco.sezioni.length) ol.append(el('li', 'vuota', 'Struttura non ancora scritta.'));
+  palco.sezioni.forEach((x, k) => {
+    const li = el('li', 'sezp'); li.dataset.indice = k;
+    const mia = me ? (Regole.leggiChiSuona(x.chiSuona) || {})[me.sigla] : '';
+    if (mia === 'tacet') li.classList.add('mio-tacet');
+    const r1 = el('div', 'r1'); r1.append(el('b', 'nome', nomi[k] + (Number(x.ripetizioni) > 1 ? ' ×' + x.ripetizioni : '')));
+    const g = Regole.gruppiChiSuona(x.chiSuona);
+    const segno = (sigla, tipo) => el('span', 'eccez ' + tipo + (imp.evidenziaSoloMe ? (me && me.sigla === sigla ? ' mia' : ' altri') : ''), (tipo === 'tacet' ? 'tacet ' : '★ ') + sigla);
+    g.tacet.forEach((sg) => r1.append(segno(sg, 'tacet')));
+    g.stella.forEach((sg) => r1.append(segno(sg, 'stella')));
+    li.append(r1);
+    if (x.nota) li.append(el('span', 'notasez', x.nota));
+    const t = testoDi(x.testo);
+    if (t && t.testo) { li.append(el('span', 'prima', Regole.primaRiga(t.testo))); li.append(el('p', 'parole', t.testo)); }   // D1 A: testo completo nella sezione corrente, per tutti
+    li.append(el('p', 'poi', ''));
+    li.addEventListener('click', () => palcoVaiSezione(k, false, 'mano'));
+    ol.append(li);
+  });
+  aggiornaSezionePalco(true);
+  aggiornaComandiPalco();
+  window.scrollTo(0, 0);
+}
+/** Sposta la sezione corrente (k) e accende o spegne "poi: …". */
+function palcoVaiSezione(k, poi, sorgente) {
+  if (!palco || !palco.sezioni.length) return;
+  k = Math.max(0, Math.min(palco.sezioni.length - 1, k));
+  const cambia = k !== palco.corrente;
+  palco.corrente = k; palco.poi = !!poi && k < palco.sezioni.length - 1;
+  if (sorgente) palco.sorgente = sorgente;
+  aggiornaSezionePalco(cambia);
+}
+function aggiornaSezionePalco(scorri) {
+  const nomi = Regole.nomiSezioni(palco.sezioni);
+  document.querySelectorAll('#pSezioni li.sezp').forEach((li) => {
+    const k = Number(li.dataset.indice), cur = k === palco.corrente;
+    li.classList.toggle('corrente', cur);
+    li.classList.toggle('con-poi', cur && palco.poi);
+    const poi = li.querySelector('.poi');
+    if (cur && palco.sezioni[k + 1]) {
+      const t = testoDi(palco.sezioni[k + 1].testo);
+      poi.textContent = 'poi: ' + nomi[k + 1] + (t && t.testo ? ' — ' + Regole.primaRiga(t.testo).replace(/ …$/, '') : '');
+    } else poi.textContent = '';
+  });
+  if (scorri) {
+    const li = document.querySelector('#pSezioni li.corrente');
+    $('vPalco').style.setProperty('--alto-testa', ($('palcoTesta').offsetHeight + 8) + 'px');
+    if (li && palco.corrente > 0) li.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+function aggiornaComandiPalco() {
+  if (!palco) return;
+  const st = $('pStart'), attivo = metroAttivo();
+  const p = palco.sezioni ? Regole.pianoMetronomo(branoDi(palco.voci[palco.i].brano), palco.sezioni, opzioniMetro()) : null;
+  st.hidden = !attivo;
+  st.disabled = !palco.suona && (!p || p.modo === 'nessuno');
+  st.classList.toggle('suona', palco.suona);
+  const nomi = Regole.nomiSezioni(palco.sezioni || []);
+  st.textContent = palco.suona ? '■ Stop' : palco.corrente > 0 && p && p.modo === 'struttura' ? '▶ da ' + nomi[palco.corrente] : '▶ Start';
+  $('pSezPrec').disabled = !palco.sezioni.length || palco.corrente === 0;
+  $('pSezSucc').disabled = !palco.sezioni.length || palco.corrente >= palco.sezioni.length - 1;
+  $('pBranoPrec').disabled = palco.i === 0;
+  $('pBranoSucc').disabled = palco.i >= palco.voci.length - 1;
+  $('pBranoPrec').hidden = $('pBranoSucc').hidden = palco.voci.length < 2;
+  $('pStato').textContent = palco.suona ? (palco.sorgente === 'metronomo' ? 'segue il click' : 'click libero: sezioni a mano') : (p && p.modo === 'nessuno' ? 'manca il BPM' : '');
+}
+function palcoBrano(d) {
+  if (!palco) return;
+  const n = palco.i + d;
+  if (n < 0 || n >= palco.voci.length) return;
+  if (palco.suona) metro.ferma();
+  palco.i = n; palco.sorgente = 'mano';
+  disegnaPalco();
+}
+/** ▶ Start: il click della T6 dalla sezione corrente (dall'inizio se è la prima), al tempo scritto (100%). */
+function palcoStart() {
+  if (!palco) return;
+  if (palco.suona) { metro.ferma(); return; }
+  const b = branoDi(palco.voci[palco.i].brano), sez = palco.sezioni;
+  const da = palco.corrente > 0 && sez[palco.corrente] ? sez[palco.corrente].id : undefined;
+  const p = Regole.pianoMetronomo(b, sez, Object.assign(opzioniMetro(), { daSezione: da }));
+  if (!p || p.modo === 'nessuno' || !p.tratti.length) return;
+  if (metro.inCorso()) metro.ferma();
+  metroDove = 'palco'; metroBrano = b.id;
+  palco.suona = true; palco.sorgente = p.modo === 'struttura' ? 'metronomo' : 'mano';
+  aggiornaComandiPalco();
+  metro.avvia(p, { tempo: 100, volume: impostazioni().metronomoVolume })
+    .catch(() => { palco.suona = false; metroDove = null; aggiornaComandiPalco(); mostra('avvisoCodice', 'Questo telefono non ha aperto l\'audio: tocca di nuovo ▶.', true); });
+}
+metro.su('battuta', (a) => {
+  if (!palco || !palco.suona || palco.sorgente !== 'metronomo') return;
+  const k = palco.sezioni.findIndex((x) => x.id === a.sezione);
+  if (a.conteggio) return;   // durante il conteggio resta la sezione da cui si parte
+  if (k < 0) return;
+  const s = palco.piano.sezioni.find((x) => x.sezione === a.sezione);
+  // D2 A: "poi: …" nell'ultima battuta, ma per almeno 2 secondi (a tempi veloci più di una battuta)
+  const poi = !!(a.prossimo && s && a.prossimo.tra <= s.battutePoi);
+  if (k !== palco.corrente || poi !== palco.poi) palcoVaiSezione(k, poi);
+});
+metro.su('colpo', (c) => {
+  if (!palco || !palco.suona) return;
+  const n = $('pConta');
+  n.hidden = !c.conteggio;
+  if (c.conteggio) n.textContent = String(c.numero);
+});
+metro.su('fermo', (f) => {
+  if (!palco || !palco.suona) return;
+  palco.suona = false; $('pConta').hidden = true;
+  // D4 A: a fine brano il click si ferma e il brano successivo resta pronto per lo start
+  if (f && f.fine && palco.i < palco.voci.length - 1) { palco.i++; palco.sorgente = 'mano'; disegnaPalco(); }
+  else { palco.poi = false; aggiornaSezionePalco(false); aggiornaComandiPalco(); }
+});
+$('pStart').addEventListener('click', palcoStart);
+$('pSezPrec').addEventListener('click', () => { if (palco) { palcoVaiSezione(palco.corrente - 1, false, palco.suona ? palco.sorgente : 'mano'); aggiornaComandiPalco(); } });
+$('pSezSucc').addEventListener('click', () => { if (palco) { palcoVaiSezione(palco.corrente + 1, false, palco.suona ? palco.sorgente : 'mano'); aggiornaComandiPalco(); } });
+$('pSezioni').addEventListener('click', () => aggiornaComandiPalco());
+$('pBranoPrec').addEventListener('click', () => palcoBrano(-1));
+$('pBranoSucc').addEventListener('click', () => palcoBrano(1));
+$('btnPalcoEsci').addEventListener('click', () => {
+  const da = palco && palco.da;
+  if (palco && palco.suona) metro.ferma();
+  palco = null;
+  if (da === 'brano' && branoAperto) vai('vBrano');
+  else if (da === 'serata' && serataAperta) vai('vSerata');
+  else vai('vInizio');
+});
+// Ingressi: scheda brano, scheda serata, riquadro "Prossima serata"
+$('btnPalcoBrano').addEventListener('click', () => {
+  if (!branoAperto || !branoDi(branoAperto.id)) return mostra('esitoBrano', 'Il palco si apre quando il brano è salvato.', true);
+  apriPalco([{ brano: branoAperto.id, nota: '', prima: [], dopo: [] }], 'brano');
+});
+$('btnPalcoSerata').addEventListener('click', () => {
+  if (!serataAperta) return;
+  if (!apriPalco(Regole.vociPalco(righeSerataCorrenti(), branoDi), 'serata', serataAperta.id)) mostra('esitoSerata', 'Prima aggiungi dei brani alla scaletta.', true);
+});
+$('btnPalcoProssima').addEventListener('click', () => {
+  const id = $('riquadroProssima').dataset.id;
+  if (!id) return;
+  apriSerata(id);
+  if (!apriPalco(Regole.vociPalco(righeDi(id), branoDi), 'serata', id)) mostra('esitoSerata', 'Prima aggiungi dei brani alla scaletta.', true);
+});
+function aggiornaIngressiPalco() {
+  const id = $('riquadroProssima').dataset.id;
+  $('btnPalcoProssima').hidden = $('riquadroProssima').hidden || !id || !Regole.vociPalco(righeDi(id), branoDi).some((v) => branoDi(v.brano));
+}
+
+/* File "Prepara per la serata": un HTML unico, senza JavaScript, scuro con il logo scuro (D3 A), personale. */
+function dataOraFile() { return new Date().toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+async function scaricaFilePalco() {
+  if (!serataAperta) return;
+  const righe = righeSerataCorrenti();
+  if (!Regole.vociPalco(righe, branoDi).length) return mostra('esitoSerata', 'Prima aggiungi dei brani alla scaletta.', true);
+  let logo = '';
+  try { logo = await (await fetch('logo/logo-dish-scuro-scritta.svg')).text(); } catch (e) { logo = ''; }   // dalla memoria offline: va anche senza rete
+  logo = logo.replace(/^<\?xml[^>]*>\s*/, '');
+  const r = risposta() || {}, imp = impostazioni(), me = io();
+  const testo = Regole.fileSerata({ serata: serataAperta, righe, brani: brani(), sezioni: r.sezioni || [], testi: r.testi || [], notazione: imp.notazione,
+    sigla: me ? me.sigla : '', evidenziaSoloMe: !!imp.evidenziaSoloMe, caratteri: imp.caratteriPalco, logo, generato: dataOraFile() });
+  const nome = Regole.nomeFileSerata(serataAperta, 'Palco') + '.html';
+  const url = URL.createObjectURL(new Blob([testo], { type: 'text/html;charset=utf-8' }));
+  const a = document.createElement('a'); a.href = url; a.download = nome; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  mostra('esitoSerata', 'File "' + nome + '" scaricato (' + Math.round(testo.length / 1024) + ' KB): si apre dalla cartella Download, anche in modalità aereo.');
+}
+$('btnFilePalco').addEventListener('click', scaricaFilePalco);
 
 /* ---------- Partenza: subito dalla copia sul telefono, poi una chiamata ---------- */
 $('versioneMotore').textContent = stato.motore;
