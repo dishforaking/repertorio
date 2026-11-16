@@ -2532,6 +2532,8 @@ window.addEventListener('resize', () => { if (!$('vStampa').hidden) scalaAntepri
  * Francesco), che userà Regole.sezioneAlTempo senza cambiare questa schermata.
  */
 let palco = null;   // { voci, i, corrente, poi, da: 'serata' | 'brano', serata, suona, sorgente, piano, sezioni, conta }
+// T8-sync: stato del sincronismo (vedi il blocco T8-sync più sotto)
+const sync = { diretta: false, ultimo: null, collegato: false, caricato: false, staccato: false, giro: null, scaduto: null, partenza: null, testoStato: '', fuoriDa: 0 };
 const sezioniDi = (id) => sezioniTutte().filter((x) => x.brano === id).sort((a, b) => a.ordine - b.ordine);
 const branoDi = (id) => brani().find((b) => b.id === id) || null;
 
@@ -2547,6 +2549,7 @@ function apriPalco(voci, da, serataId) {
   memoria.set('palcoDa', da);
   vai('vPalco');
   disegnaPalco();
+  syncApri();   // T8-sync: solo per il palco di una serata (D6)
   return true;
 }
 function caricaBranoPalco() {
@@ -2588,11 +2591,12 @@ function disegnaPalco() {
     const t = testoDi(x.testo);
     if (t && t.testo) { li.append(el('span', 'prima', Regole.primaRiga(t.testo))); li.append(el('p', 'parole', t.testo)); }   // D1 A: testo completo nella sezione corrente, per tutti
     li.append(el('p', 'poi', ''));
-    li.addEventListener('click', () => palcoVaiSezione(k, false, 'mano'));
+    li.addEventListener('click', () => { syncStacca(); palcoVaiSezione(k, false, 'mano'); });
     ol.append(li);
   });
   aggiornaSezionePalco(true);
   aggiornaComandiPalco();
+  syncBarra();
   window.scrollTo(0, 0);
 }
 /** Sposta la sezione corrente (k) e accende o spegne "poi: …". */
@@ -2627,7 +2631,7 @@ function aggiornaComandiPalco() {
   if (!palco) return;
   const st = $('pStart'), attivo = metroAttivo();
   const p = palco.sezioni ? Regole.pianoMetronomo(branoDi(palco.voci[palco.i].brano), palco.sezioni, opzioniMetro()) : null;
-  st.hidden = !attivo;
+  st.hidden = !attivo || syncInDiretta();   // T8-sync D2 A: chi segue la batteria non ha lo start (anche se staccato)
   st.disabled = !palco.suona && (!p || p.modo === 'nessuno');
   st.classList.toggle('suona', palco.suona);
   const nomi = Regole.nomiSezioni(palco.sezioni || []);
@@ -2638,6 +2642,7 @@ function aggiornaComandiPalco() {
   $('pBranoSucc').disabled = palco.i >= palco.voci.length - 1;
   $('pBranoPrec').hidden = $('pBranoSucc').hidden = palco.voci.length < 2;
   $('pStato').textContent = palco.suona ? (palco.sorgente === 'metronomo' ? 'segue il click' : 'click libero: sezioni a mano') : (p && p.modo === 'nessuno' ? 'manca il BPM' : '');
+  if (syncSegueAttivo() && sync.testoStato) $('pStato').textContent = sync.testoStato;
 }
 function palcoBrano(d) {
   if (!palco) return;
@@ -2645,7 +2650,9 @@ function palcoBrano(d) {
   if (n < 0 || n >= palco.voci.length) return;
   if (palco.suona) metro.ferma();
   palco.i = n; palco.sorgente = 'mano';
+  syncStacca();
   disegnaPalco();
+  syncInvia('pronto');   // D1 A: sveglia la rete e porta gli altri sul brano
 }
 /** ▶ Start: il click della T6 dalla sezione corrente (dall'inizio se è la prima), al tempo scritto (100%). */
 function palcoStart() {
@@ -2658,6 +2665,7 @@ function palcoStart() {
   if (metro.inCorso()) metro.ferma();
   metroDove = 'palco'; metroBrano = b.id;
   palco.suona = true; palco.sorgente = p.modo === 'struttura' ? 'metronomo' : 'mano';
+  sync.partenza = sync.diretta ? { da: da || '' } : null;   // T8-sync: il messaggio parte al primo colpo udibile
   aggiornaComandiPalco();
   metro.avvia(p, { tempo: 100, volume: impostazioni().metronomoVolume })
     .catch(() => { palco.suona = false; metroDove = null; aggiornaComandiPalco(); mostra('avvisoCodice', 'Questo telefono non ha aperto l\'audio: tocca di nuovo ▶.', true); });
@@ -2674,6 +2682,7 @@ metro.su('battuta', (a) => {
 });
 metro.su('colpo', (c) => {
   if (!palco || !palco.suona) return;
+  if (sync.partenza) { const x = sync.partenza; sync.partenza = null; syncInvia('start', x.da); }
   const n = $('pConta');
   n.hidden = !c.conteggio;
   if (c.conteggio) n.textContent = String(c.numero);
@@ -2682,18 +2691,20 @@ metro.su('fermo', (f) => {
   if (!palco || !palco.suona) return;
   palco.suona = false; $('pConta').hidden = true;
   // D4 A: a fine brano il click si ferma e il brano successivo resta pronto per lo start
-  if (f && f.fine && palco.i < palco.voci.length - 1) { palco.i++; palco.sorgente = 'mano'; disegnaPalco(); }
-  else { palco.poi = false; aggiornaSezionePalco(false); aggiornaComandiPalco(); }
+  sync.partenza = null;
+  if (f && f.fine && palco.i < palco.voci.length - 1) { palco.i++; palco.sorgente = 'mano'; disegnaPalco(); syncInvia('pronto'); }
+  else { palco.poi = false; aggiornaSezionePalco(false); aggiornaComandiPalco(); syncInvia('fermo'); }
 });
 $('pStart').addEventListener('click', palcoStart);
-$('pSezPrec').addEventListener('click', () => { if (palco) { palcoVaiSezione(palco.corrente - 1, false, palco.suona ? palco.sorgente : 'mano'); aggiornaComandiPalco(); } });
-$('pSezSucc').addEventListener('click', () => { if (palco) { palcoVaiSezione(palco.corrente + 1, false, palco.suona ? palco.sorgente : 'mano'); aggiornaComandiPalco(); } });
+$('pSezPrec').addEventListener('click', () => { if (palco) { syncStacca(); palcoVaiSezione(palco.corrente - 1, false, palco.suona ? palco.sorgente : 'mano'); aggiornaComandiPalco(); } });
+$('pSezSucc').addEventListener('click', () => { if (palco) { syncStacca(); palcoVaiSezione(palco.corrente + 1, false, palco.suona ? palco.sorgente : 'mano'); aggiornaComandiPalco(); } });
 $('pSezioni').addEventListener('click', () => aggiornaComandiPalco());
 $('pBranoPrec').addEventListener('click', () => palcoBrano(-1));
 $('pBranoSucc').addEventListener('click', () => palcoBrano(1));
 $('btnPalcoEsci').addEventListener('click', () => {
   const da = palco && palco.da;
   if (palco && palco.suona) metro.ferma();
+  syncChiudi();   // T8-sync: uscendo dal palco la diretta finisce ("fine")
   palco = null;
   if (da === 'brano' && branoAperto) vai('vBrano');
   else if (da === 'serata' && serataAperta) vai('vSerata');
@@ -2718,6 +2729,151 @@ function aggiornaIngressiPalco() {
   const id = $('riquadroProssima').dataset.id;
   $('btnPalcoProssima').hidden = $('riquadroProssima').hidden || !id || !Regole.vociPalco(righeDi(id), branoDi).some((v) => branoDi(v.brano));
 }
+
+/* ---------- T8-sync · Palco sincronizzato (progetto approvato il 16/11/2026: D1–D6 tutte A) ----------
+ * Doppio consenso (D6): il telefono DRUM manda messaggi solo "📡 In diretta" (spenta all'apertura, proposta il
+ * giorno della serata); gli altri seguono solo dopo "Segui", e solo nel palco della stessa serata.
+ * Il canale è sync.js (Firebase), caricato solo qui (D5 A). Le decisioni stanno nelle regole (vistaSync), qui
+ * solo schermo e tasti. La batteria segue il proprio click come nella T8; gli altri calcolano dall'istante.
+ */
+const sonoBatteria = () => { const me = io(); return !!(me && me.sigla === 'DRUM'); };
+const configSync = () => { const r = risposta(); return (r && r.palcoSync && r.palcoSync.url && r.palcoSync.segreto) ? r.palcoSync : null; };
+const chiaveSegui = () => 'segui-' + (palco && palco.serata);
+function syncSegue() { return !!(palco && palco.serata && !sonoBatteria() && memoria.get(chiaveSegui())); }
+function syncInDiretta() { return syncSegue() && !!(sync.ultimo && Regole.leggiMessaggio(sync.ultimo, { serata: palco.serata, oraServer: syncOra() }).vale); }
+function syncSegueAttivo() { return syncInDiretta() && !sync.staccato; }
+function syncOra() { return window.SyncPalco ? window.SyncPalco.oraServer() : Date.now(); }
+function caricaSync() {
+  if (window.SyncPalco) return Promise.resolve(true);
+  return new Promise((ok) => {
+    const s = document.createElement('script'); s.src = 'sync.js';
+    s.onload = () => ok(!!window.SyncPalco); s.onerror = () => ok(false);
+    document.head.append(s);
+  });
+}
+function syncApri() {
+  Object.assign(sync, { diretta: false, ultimo: null, collegato: false, staccato: false, partenza: null, testoStato: '' });
+  const cfg = configSync();
+  if (!palco || !palco.serata || !cfg) { syncBarra(); return; }
+  const serata = palco.serata;
+  caricaSync().then((ok) => {
+    if (!ok || !palco || palco.serata !== serata) { syncBarra(); return; }
+    window.SyncPalco.apri({ url: cfg.url, segreto: cfg.segreto, serata }, syncRicevi, (st) => {
+      sync.collegato = !!st.collegato;
+      if (sync.collegato) sync.fuoriDa = 0; else if (!sync.fuoriDa) sync.fuoriDa = Date.now();
+      syncAggiorna();
+    });
+    if (sync.diretta) syncInvia('diretta');   // diretta accesa prima che il canale fosse pronto
+  });
+  syncBarra();
+}
+function syncChiudi() {
+  if (sync.diretta) syncInvia('fine');
+  sync.diretta = false;
+  if (sync.giro) cancelAnimationFrame(sync.giro);
+  sync.giro = null;
+  if (window.SyncPalco) setTimeout(() => window.SyncPalco.chiudi(), 1500);   // il tempo di far partire "fine"
+}
+/** DRUM: manda un evento, solo in diretta (D2 A, D6 A). Chi invia ignora la propria eco (non segue nessuno). */
+function syncInvia(evento, daSezione) {
+  if (!palco || !sync.diretta || !window.SyncPalco || !sonoBatteria()) return;
+  const v = palco.voci[palco.i];
+  const dati = { n: ((sync.ultimo && sync.ultimo.n) || 0) + 1, evento, serata: palco.serata, brano: evento === 'fine' ? '' : v.brano, voce: palco.i,
+    daSezione: daSezione || '', tempo: 100, inviato: Math.round(syncOra()) };
+  if (evento === 'start') {
+    const pp = Regole.pianoPalco(branoDi(v.brano), palco.sezioni, Object.assign(opzioniMetro(), { daSezione: daSezione || undefined }));
+    dati.inizio = Regole.inizioSync(syncOra(), pp, 100);   // syncOra() qui = primo colpo udibile del conteggio
+  }
+  const m = Regole.messaggioPalco(dati);
+  if (!m) return;
+  sync.ultimo = m;
+  window.SyncPalco.invia(m).catch(() => { /* senza rete: il click va avanti lo stesso */ });
+  syncBarra();
+}
+function syncRicevi(m) {
+  if (!palco) return;
+  if (sonoBatteria()) { if (Regole.messaggioValido(m) && (!sync.ultimo || m.n >= sync.ultimo.n)) sync.ultimo = m; return; }   // eco e numerazione
+  const prima = sync.ultimo;
+  sync.ultimo = Regole.messaggioValido(m) ? m : null;
+  // D3 A: un nuovo start o un cambio di brano della batteria riattacca chi si era staccato
+  if (sync.staccato && sync.ultimo && (!prima || sync.ultimo.n !== prima.n) && ['start', 'pronto'].includes(sync.ultimo.evento)) sync.staccato = false;
+  if (sync.ultimo && !sync.ultimo.diretta) memoria.del(chiaveSegui());   // "fine diretta": tutti tornano indipendenti
+  syncAggiorna();
+}
+/** Vista dei telefoni che seguono: calcolata dalle regole a ogni fotogramma mentre il brano scorre. */
+function syncAggiorna() {
+  if (sync.giro) cancelAnimationFrame(sync.giro);
+  sync.giro = null;
+  if (!palco || sonoBatteria()) { syncBarra(); return; }
+  const m = sync.ultimo;
+  const b = m && m.brano ? branoDi(m.brano) : null;
+  const piano = b ? Regole.pianoPalco(b, sezioniDi(m.brano), { conteggio: '0', daSezione: m.daSezione || undefined }) : null;
+  const v = Regole.vistaSync(m, piano, { serata: palco.serata, oraServer: syncOra(), segue: syncSegue(), staccato: sync.staccato, collegato: sync.collegato });
+  sync.testoStato = '';
+  if (['pronto', 'conteggio', 'sezione', 'fine', 'fermo', 'mano'].includes(v.stato)) {
+    // sul brano della batteria (la voce indica quale, se lo stesso brano è due volte in scaletta)
+    let k = palco.voci[v.voce] && palco.voci[v.voce].brano === v.brano ? v.voce : palco.voci.findIndex((x) => x.brano === v.brano);
+    if (k >= 0 && k !== palco.i) { palco.i = k; disegnaPalco(); }
+    const sezDa = m.daSezione ? palco.sezioni.findIndex((x) => x.id === m.daSezione) : 0;
+    palco.sorgente = 'remota';
+    if (v.stato === 'pronto') { palcoVaiSezione(Math.max(0, sezDa), false); sync.testoStato = 'pronto: aspetta lo start'; }
+    else if (v.stato === 'conteggio') { palcoVaiSezione(Math.max(0, sezDa), false); $('pConta').hidden = false; $('pConta').textContent = String(v.mancano); }
+    else if (v.stato === 'sezione' || v.stato === 'fine') {
+      $('pConta').hidden = true;
+      const id = piano.sezioni[v.indice] && piano.sezioni[v.indice].sezione, kk = palco.sezioni.findIndex((x) => x.id === id);
+      if (kk >= 0) palcoVaiSezione(kk, v.poi);
+      sync.testoStato = v.stato === 'fine' ? 'fine del brano' : 'segue la batteria';
+    } else if (v.stato === 'fermo') { $('pConta').hidden = true; sync.testoStato = 'click fermo: sezioni a mano'; }
+    else { $('pConta').hidden = true; sync.testoStato = piano && piano.motivo ? piano.motivo : 'scorrimento a mano'; }
+    if (v.stato === 'conteggio' || v.stato === 'sezione') sync.giro = requestAnimationFrame(syncAggiorna);
+  } else if (v.stato === 'collegamento') {
+    // senza conferma del server non si usa la copia vecchia; dopo 5 s si dice che si scorre a mano
+    sync.testoStato = sync.fuoriDa && Date.now() - sync.fuoriDa > 5000 ? 'senza rete: scorrimento a mano' : 'in collegamento…';
+    clearTimeout(sync.scaduto); sync.scaduto = setTimeout(syncAggiorna, 5200);
+  }
+  syncBarra();
+  if (sync.testoStato !== sync.testoPrima) { sync.testoPrima = sync.testoStato; aggiornaComandiPalco(); }
+}
+/** Barra del sincronismo: spia, testo e un tasto che cambia con la situazione. */
+function syncBarra() {
+  const barra = $('pSyncBarra'), tasto = $('pSyncTasto'), t = $('pSyncTesto');
+  if (!barra) return;
+  const cfg = palco && palco.serata && configSync();
+  barra.hidden = !cfg; $('pSync').hidden = true;
+  if (!cfg) return;
+  const collegato = sync.collegato, spia = collegato ? 'si' : 'no';
+  barra.dataset.spia = spia;
+  if (sonoBatteria()) {
+    const s = serateTutte().find((x) => x.id === palco.serata), oggi = s && s.data === oggiLocale();
+    if (sync.diretta) { t.textContent = '📡 ● diretta' + (collegato ? '' : ' (senza rete: il click va avanti)'); tasto.textContent = 'Spegni diretta'; }
+    else { t.textContent = oggi ? 'Serata di oggi: vai in diretta?' : 'Diretta spenta: nessuno vede i tuoi start'; tasto.textContent = '📡 In diretta'; }
+    tasto.dataset.azione = sync.diretta ? 'spegni' : 'accendi';
+    $('pSync').hidden = !sync.diretta; $('pSync').textContent = '📡'; $('pSync').dataset.spia = spia;
+    return;
+  }
+  const vale = sync.ultimo && Regole.leggiMessaggio(sync.ultimo, { serata: palco.serata, oraServer: syncOra() }).vale;
+  if (!vale) { barra.hidden = true; return; }   // nessuna diretta: il palco resta quello della T8 (D6)
+  if (!syncSegue()) { t.textContent = 'La batteria è in diretta'; tasto.textContent = 'Segui'; tasto.dataset.azione = 'segui'; }
+  else if (sync.staccato) { t.textContent = 'staccato: scorri a mano'; tasto.textContent = '↺ segui la batteria'; tasto.dataset.azione = 'riattacca'; }
+  else { t.textContent = '● ' + (sync.testoStato || 'segue la batteria'); tasto.textContent = 'Non seguire più'; tasto.dataset.azione = 'smetti'; }
+  $('pSync').hidden = !syncSegue(); $('pSync').textContent = '●'; $('pSync').dataset.spia = spia;
+}
+/** D3 A: chi segue e tocca ‹ › o una sezione si stacca fino al prossimo start o cambio di brano. */
+function syncStacca() {
+  if (syncSegueAttivo()) { sync.staccato = true; if (sync.giro) cancelAnimationFrame(sync.giro); sync.giro = null; $('pConta').hidden = true; sync.testoStato = ''; syncBarra(); }
+}
+$('pSyncTasto').addEventListener('click', () => {
+  if (!palco) return;
+  const a = $('pSyncTasto').dataset.azione;
+  if (a === 'accendi') { sync.diretta = true; syncInvia('diretta'); }
+  else if (a === 'spegni') { syncInvia('fine'); sync.diretta = false; }
+  else if (a === 'segui') { memoria.set(chiaveSegui(), true); sync.staccato = false; }
+  else if (a === 'smetti') { memoria.del(chiaveSegui()); sync.staccato = false; $('pConta').hidden = true; palco.sorgente = 'mano'; }
+  else if (a === 'riattacca') sync.staccato = false;
+  sync.testoPrima = null;
+  syncAggiorna();
+  aggiornaComandiPalco();
+});
 
 /* File "Prepara per la serata": un HTML unico, senza JavaScript, scuro con il logo scuro (D3 A), personale. */
 function dataOraFile() { return new Date().toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }

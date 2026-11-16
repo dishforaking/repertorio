@@ -427,6 +427,15 @@ body.in-palco main { max-width: 760px; padding: 0 10px; }
 #pStart.suona { background: var(--rosso); border-color: #e05a52; }
 .palco-comandi button.brano-palco { min-height: 44px; font-size: 16px; font-weight: 400; }
 .palco-stato { text-align: center; color: var(--tenue); font-size: 13px; }
+/* T8-sync: barra del sincronismo (spia verde = collegato, grigia = senza rete) e spia in testata */
+.palco-sync { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 8px; border: 1px solid #3a4152; border-radius: 8px; font-size: 14px; }
+.palco-sync span { flex: 1; min-width: 0; }
+.palco-sync[data-spia="si"] span { color: #7fd27f; }
+.palco-sync[data-spia="no"] span { color: var(--tenue); }
+.palco-sync button { flex: none; padding: 6px 10px; font-size: 14px; }
+.palco-spia { margin-left: auto; font-size: 18px; }
+.palco-spia[data-spia="si"] { color: #7fd27f; }
+.palco-spia[data-spia="no"] { color: #777; }
 
 @media print {
   html, body { background: #fff !important; color: #000; padding: 0 !important; margin: 0; }

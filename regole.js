@@ -13,9 +13,11 @@
  * T7: serate e scaletta (righe brano / pausa / bis / libera, set e orari, riga del foglio stampato).
  * T8: Modalità Palco (piano del palco dal piano del metronomo, sezione al tempo, "poi:" per almeno 2 s) e file per la serata.
  *     Correzione del collaudo T8 (v8): il foglio trasforma "4/4" in una data; metroLetto lo riporta a "4/4".
+ * T8-sync (v9): palco sincronizzato. Messaggio della batteria (start, pronto, fermo, diretta, fine), controllo dei
+ *     messaggi ricevuti e vista calcolata da ogni telefono con il proprio orologio (corretto sul server).
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 8;
+  var VERSIONE_REGOLE = 9;
   var TAPPA = 8;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
@@ -1165,7 +1167,7 @@ var Regole = (function () {
       var sb = tr.battitiBattuta * 60 / tr.bpm, n = tr.battute * tr.giri, dur = n * sb;
       if (tr.conteggio) { cont += dur; t += dur; return; }
       var nPoi = Math.min(n, Math.max(1, Math.ceil(POI_MIN_SECONDI / sb - 1e-9)));
-      out.push({ sezione: tr.sezione, nome: tr.nome, inizio: t, fine: t + dur, secBattuta: sb, battute: n, battutePoi: nPoi, inizioPoi: t + dur - nPoi * sb });
+      out.push({ sezione: tr.sezione, nome: tr.nome, inizio: t, fine: t + dur, secBattuta: sb, battute: n, battutePoi: nPoi, inizioPoi: t + dur - nPoi * sb, battitiBattuta: tr.battitiBattuta });
       t += dur;
     });
     return { modo: 'struttura', motivo: '', conteggio: cont, sezioni: out, durata: t - cont };
@@ -1192,6 +1194,94 @@ var Regole = (function () {
       }
     }
     o = base(ultima); o.stato = 'fine'; return o;
+  }
+
+  /* ---------- T8-sync · palco sincronizzato (decisioni D1–D6 del 16/11/2026) ---------- */
+  var EVENTI_SYNC = ['diretta', 'start', 'pronto', 'fermo', 'fine'];
+  var SYNC_SCADENZA_MS = 3 * 3600 * 1000;   // una diretta senza messaggi da 3 ore (telefono spento a metà) non vale più
+  var reIdSync = /^[A-Za-z0-9_-]{1,40}$/;
+  function interoTra(x, a, b) { return typeof x === 'number' && Math.floor(x) === x && x >= a && x <= b; }
+  function numeroFinito(x) { return typeof x === 'number' && isFinite(x); }
+
+  /**
+   * Istante (orologio del server, ms) della PRIMA BATTUTA dopo il conteggio: chi riceve non deve sapere quante
+   * battute di conteggio usa la batteria. oraPartenzaServer = istante del primo colpo del conteggio.
+   */
+  function inizioSync(oraPartenzaServer, piano, tempo) {
+    var t = Number(tempo) || 100;
+    return Math.round(Number(oraPartenzaServer) + ((piano && piano.conteggio) || 0) * 100 / t * 1000);
+  }
+
+  /** Costruisce il messaggio della batteria. dati: { n, evento, serata, brano, voce, daSezione, inizio, tempo, inviato }. */
+  function messaggioPalco(dati) {
+    var d = dati || {}, ev = d.evento;
+    var m = { n: d.n, evento: ev, diretta: ev !== 'fine', serata: String(d.serata || ''), brano: String(d.brano || ''),
+      voce: vuoto(d.voce) ? 0 : Number(d.voce), daSezione: String(d.daSezione || ''),
+      inizio: ev === 'start' ? Math.round(Number(d.inizio)) : 0, tempo: vuoto(d.tempo) ? 100 : Number(d.tempo), inviato: Math.round(Number(d.inviato)) };
+    return messaggioValido(m) ? m : null;
+  }
+
+  /** Stessi controlli delle regole del database (regole-firebase.json): campi, tipi e grandezze. */
+  function messaggioValido(m) {
+    if (!m || typeof m !== 'object') return false;
+    var chiavi = Object.keys(m).filter(function (k) { return k !== 'scritto'; }).sort().join();
+    if (chiavi !== 'brano,daSezione,diretta,evento,inizio,inviato,n,serata,tempo,voce') return false;
+    if (!interoTra(m.n, 1, 1e9) || EVENTI_SYNC.indexOf(m.evento) < 0 || m.diretta !== (m.evento !== 'fine')) return false;
+    if (!reIdSync.test(m.serata)) return false;
+    if (m.brano !== '' && !reIdSync.test(m.brano)) return false;
+    if (m.daSezione !== '' && !reIdSync.test(m.daSezione)) return false;
+    if (!interoTra(m.voce, 0, 199) || !interoTra(m.tempo, 50, 100) || !numeroFinito(m.inviato) || !numeroFinito(m.inizio)) return false;
+    if ((m.evento === 'start' || m.evento === 'pronto') && m.brano === '') return false;
+    if (m.evento === 'start' && !(m.inizio > 0)) return false;
+    return true;
+  }
+
+  /**
+   * Il messaggio riguarda il palco aperto su questo telefono? (D6: solo il palco di una serata, la stessa.)
+   * contesto: { serata (id o '' per il palco di un brano), oraServer (ms) }.
+   * → { vale, motivo: 'valido' | 'non valido' | 'brano singolo' | 'altra serata' | 'scaduto' | 'fine' }
+   */
+  function leggiMessaggio(m, contesto) {
+    var c = contesto || {};
+    if (!messaggioValido(m)) return { vale: false, motivo: 'non valido' };
+    if (!c.serata) return { vale: false, motivo: 'brano singolo' };
+    if (m.serata !== c.serata) return { vale: false, motivo: 'altra serata' };
+    if (numeroFinito(c.oraServer) && c.oraServer - m.inviato > SYNC_SCADENZA_MS) return { vale: false, motivo: 'scaduto' };
+    if (!m.diretta) return { vale: false, motivo: 'fine' };
+    return { vale: true, motivo: 'valido' };
+  }
+
+  /**
+   * Cosa mostra un telefono che NON è la batteria. Ognuno calcola da solo, con il proprio orologio corretto sul server.
+   * m = ultimo messaggio; piano = pianoPalco del brano m.brano con daSezione = m.daSezione (il conteggio del telefono
+   * non conta: si toglie); stato = { serata, oraServer, segue, staccato, collegato }.
+   * → { stato, indice, battuta, poi, mancano, brano, voce }:
+   *   'indipendente' (nessuna diretta: palco come nella T8) · 'avviso' (diretta, non segue: "Segui") ·
+   *   'staccato' (D3: corretto a mano, "↺ segui") · 'collegamento' (in attesa del server: niente copia vecchia) ·
+   *   'pronto' (brano scelto, aspetta lo start) · 'fermo' (click fermato: si resta dove si era, a mano) ·
+   *   'mano' (brano senza struttura completa) · 'conteggio' (mancano N battiti) · 'sezione' · 'fine'.
+   */
+  function vistaSync(m, piano, stato) {
+    var st = stato || {}, out = { stato: 'indipendente', indice: -1, battuta: 0, poi: false, mancano: 0, brano: '', voce: -1 };
+    var l = leggiMessaggio(m, st);
+    if (!l.vale) return out;
+    if (!st.segue) { out.stato = 'avviso'; return out; }
+    out.brano = m.brano; out.voce = m.voce;
+    if (st.staccato) { out.stato = 'staccato'; return out; }
+    if (!st.collegato) { out.stato = 'collegamento'; return out; }
+    if (m.evento === 'diretta') { out.stato = m.brano ? 'pronto' : 'fermo'; return out; }
+    if (m.evento === 'pronto') { out.stato = 'pronto'; return out; }
+    if (m.evento === 'fermo') { out.stato = 'fermo'; return out; }
+    if (!piano || piano.modo !== 'struttura' || !piano.sezioni.length) { out.stato = 'mano'; return out; }
+    var t = (m.tempo || 100), dt = (st.oraServer - m.inizio) / 1000;   // secondi reali dalla prima battuta
+    if (dt < 0) {
+      var s0 = piano.sezioni[0], battito = s0.secBattuta / (s0.battitiBattuta || 1) * 100 / t;
+      out.stato = 'conteggio'; out.indice = 0; out.mancano = Math.ceil(-dt / battito - 1e-9); return out;
+    }
+    var r = sezioneAlTempo(piano, dt + piano.conteggio * 100 / t, t);
+    out.indice = r.indice; out.battuta = r.battuta; out.poi = r.poi;
+    out.stato = r.stato === 'fine' ? 'fine' : 'sezione';
+    return out;
   }
 
   /** Nome del file (e del PDF): "2026-12-12 Bar Test - Palco Dish for a King"; caratteri vietati nei nomi dei file tolti. */
@@ -1414,6 +1504,13 @@ var Regole = (function () {
     sistemaMetri: sistemaMetri,
     motivoBreve: motivoBreve,
     sezioneAlTempo: sezioneAlTempo,
+    EVENTI_SYNC: EVENTI_SYNC,
+    SYNC_SCADENZA_MS: SYNC_SCADENZA_MS,
+    inizioSync: inizioSync,
+    messaggioPalco: messaggioPalco,
+    messaggioValido: messaggioValido,
+    leggiMessaggio: leggiMessaggio,
+    vistaSync: vistaSync,
     nomeFileSerata: nomeFileSerata,
     fileSerata: fileSerata
   };
