@@ -15,9 +15,10 @@
  *     Correzione del collaudo T8 (v8): il foglio trasforma "4/4" in una data; metroLetto lo riporta a "4/4".
  * T8-sync (v9): palco sincronizzato. Messaggio della batteria (start, pronto, fermo, diretta, fine), controllo dei
  *     messaggi ricevuti e vista calcolata da ogni telefono con il proprio orologio (corretto sul server).
+ * T8-bis-1 (v10): scheda tecnica (famiglie, linee e coppie stereo, Click ultimo, monitor, stage plan, revisioni).
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 9;
+  var VERSIONE_REGOLE = 10;
   var TAPPA = 8;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
@@ -1377,8 +1378,179 @@ var Regole = (function () {
     return h.join('\n');
   }
 
+  /* ===================== T8-bis-1 (v10): scheda tecnica ===================== */
+  // Famiglie e ordine come nella Scheda Gig del WING; lettera per il foglio (mai solo colore).
+  var FAMIGLIE = [
+    { id: 'batteria', nome: 'Batteria', lettera: 'B', colore: '#B62E27' },
+    { id: 'basso', nome: 'Basso', lettera: 'Bs', colore: '#7A4FA0' },
+    { id: 'chitarre', nome: 'Chitarre', lettera: 'G', colore: '#2E7D32' },
+    { id: 'tastiere', nome: 'Tastiere', lettera: 'K', colore: '#00838F' },
+    { id: 'fiati', nome: 'Fiati', lettera: 'F', colore: '#C77700' },
+    { id: 'voci', nome: 'Voci', lettera: 'V', colore: '#29367C' },
+    { id: 'basi', nome: 'Basi', lettera: 'Ba', colore: '#5D6B78' },
+    { id: 'aux', nome: 'Aux', lettera: 'X', colore: '#8D6E63' }
+  ];
+  var ASTE = ['corta', 'alta', 'giraffa', 'clamp', 'nessuna'];
+  var FORNITO = ['band', 'locale'];
+  var TIPI_MONITOR = ['wedge', 'IEM stereo', 'IEM mono'];
+  // Variante del 17/11/2026 (batteria a pezzi): ogni pezzo è un'icona sua; 'batteria' (disegno fisso) resta solo per le schede vecchie.
+  var PEZZI_BATTERIA = ['cassa', 'rullante', 'tom', 'timpano', 'hihat', 'ride', 'crash', 'splash', 'china', 'sgabello'];
+  var ICONE_PALCO = ['ampliChitarra', 'ampliBasso', 'pedaliera', 'modeller', 'tastiera', 'astaVoce',
+    'wedge', 'centralinaIem', 'di', 'presa', 'stagebox', 'rackWing', 'splitter'].concat(PEZZI_BATTERIA).concat(['pedana', 'batteria']);
+  var AGGANCIO_FINE = 0.05;   // i pezzi della batteria stanno a pochi cm l'uno dall'altro
+  /* Set di Francesco (17/11/2026), posizioni in metri dal centro, per batterista DESTRO (assunzione: hi-hat alla sua sinistra,
+     cioè a destra guardando dal pubblico, che sta in basso). Vale finché Francesco non salva il suo con "Salva come mio set". */
+  var SET_PARTENZA = [
+    { tipo: 'sgabello', x: 0, y: -0.55 }, { tipo: 'cassa', x: 0, y: 0.1 }, { tipo: 'rullante', x: 0.25, y: -0.2 },
+    { tipo: 'hihat', x: 0.55, y: -0.2 }, { tipo: 'tom', x: 0.15, y: -0.05, etichetta: 'Tom1' }, { tipo: 'tom', x: -0.15, y: -0.05, etichetta: 'Tom2' },
+    { tipo: 'timpano', x: -0.45, y: -0.25, etichetta: 'Ftom1' }, { tipo: 'timpano', x: -0.45, y: -0.65, etichetta: 'Ftom2' },
+    { tipo: 'ride', x: -0.7, y: 0.1 }, { tipo: 'crash', x: 0.6, y: 0.25, etichetta: 'Crash1' }, { tipo: 'splash', x: 0.25, y: 0.35 },
+    { tipo: 'crash', x: -0.35, y: 0.35, etichetta: 'Crash2' }, { tipo: 'china', x: -0.95, y: -0.3 }];
+  var MAX_CANALI = 64, MAX_MIX = 24, MAX_ICONE = 80;
+  var PALCO_MIN = 2, PALCO_MAX = 30, PASSO_PALCO = 0.5, AGGANCIO = 0.25;
+
+  function testoBreve(v, max) { return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max); }
+  // id interni alla scheda (canali, mix, icone): non sono righe del foglio, basta che inizino con una lettera.
+  function idInterno(id) { return typeof id === 'string' && /^[A-Za-z][A-Za-z0-9]{0,23}$/.test(id); }
+  function indiceFamiglia(id) { for (var i = 0; i < FAMIGLIE.length; i++) if (FAMIGLIE[i].id === id) return i; return FAMIGLIE.length - 1; }
+  function famigliaDi(id) { return FAMIGLIE[indiceFamiglia(id)]; }
+  function aggancia(v, passo) { return Math.round(Number(v) / passo) * passo; }
+  function limita(v, a, b) { v = Number(v); if (!isFinite(v)) v = a; return Math.min(b, Math.max(a, v)); }
+
+  function normalizzaCanale(c) {
+    c = c || {};
+    var click = c.click === true;
+    return {
+      id: idInterno(c.id) ? c.id : '',
+      sorgente: testoBreve(c.sorgente, 40),
+      famiglia: click ? 'aux' : FAMIGLIE[indiceFamiglia(c.famiglia)].id,
+      stereo: c.stereo === true,
+      mic: testoBreve(c.mic, 40),
+      asta: ASTE.indexOf(c.asta) >= 0 ? c.asta : 'nessuna',
+      phantom: c.phantom === true,
+      fornito: FORNITO.indexOf(c.fornito) >= 0 ? c.fornito : 'band',
+      note: testoBreve(c.note, 80),
+      click: click
+    };
+  }
+  /* Ordine: famiglie come la Scheda Gig, dentro la famiglia l'ordine scritto; il Click sempre ultimo. */
+  function ordinaCanali(canali) {
+    return (canali || []).map(function (c, i) { return { c: c, i: i }; }).sort(function (a, b) {
+      if (a.c.click !== b.c.click) return a.c.click ? 1 : -1;
+      return (indiceFamiglia(a.c.famiglia) - indiceFamiglia(b.c.famiglia)) || (a.i - b.i);
+    }).map(function (x) { return x.c; });
+  }
+  /* Linee: mono = 1 linea, stereo = 2 (L/R) che partono da una dispari; la linea saltata è "libera". */
+  function numeraLinee(canali) {
+    var righe = [], n = 1;
+    ordinaCanali(canali).forEach(function (c) {
+      if (c.stereo && n % 2 === 0) { righe.push({ linea: n, libera: true }); n++; }
+      if (c.stereo) { righe.push({ linea: n, canale: c, lato: 'L' }); righe.push({ linea: n + 1, canale: c, lato: 'R' }); n += 2; }
+      else { righe.push({ linea: n, canale: c, lato: '' }); n++; }
+    });
+    return righe;
+  }
+  function etichettaLinee(canali, idCanale) {
+    var l = numeraLinee(canali).filter(function (r) { return r.canale && r.canale.id === idCanale; }).map(function (r) { return r.linea; });
+    return l.length ? (l.length > 1 ? l[0] + '-' + l[l.length - 1] : String(l[0])) : '';
+  }
+  function testoMic(m) {
+    m = testoBreve(m, 40);
+    if (!m) return '';
+    if (/^(DI|modeller|playback|linea)$/i.test(m) || /equivalente/i.test(m)) return m;
+    return m + ' o equivalente';
+  }
+  function normalizzaMix(m) {
+    m = m || {};
+    return { id: idInterno(m.id) ? m.id : '', mix: testoBreve(m.mix, 12), chi: testoBreve(m.chi, 30),
+      tipo: TIPI_MONITOR.indexOf(m.tipo) >= 0 ? m.tipo : 'wedge', posizione: testoBreve(m.posizione, 30), ascolto: testoBreve(m.ascolto, 120) };
+  }
+  function normalizzaIcona(o, palco) {
+    o = o || {};
+    var tipo = ICONE_PALCO.indexOf(o.tipo) >= 0 ? o.tipo : 'di';
+    var pezzo = PEZZI_BATTERIA.indexOf(tipo) >= 0, passo = pezzo ? AGGANCIO_FINE : AGGANCIO;
+    var tondo = function (v) { return Math.round(v * 100) / 100; };   // niente 1,1500000001 dopo l'aggancio
+    var ic = { id: idInterno(o.id) ? o.id : '', tipo: tipo, x: tondo(limita(aggancia(o.x, passo), 0, palco.larghezza)),
+      y: tondo(limita(aggancia(o.y, passo), 0, palco.profondita)), rot: ((Math.round(Number(o.rot) / 45) * 45) % 360 + 360) % 360 || 0,
+      etichetta: testoBreve(o.etichetta, 30), canali: testoBreve(o.canali, 20) };
+    if (tipo === 'presa') ic.prese = limita(Math.round(o.prese || 1), 1, 12);
+    if (pezzo) ic.gruppo = 'batteria';
+    if (tipo === 'pedana') {
+      ic.larghezza = tondo(limita(aggancia(o.larghezza || 2, AGGANCIO), 0.5, 6));
+      ic.profondita = tondo(limita(aggancia(o.profondita || 2, AGGANCIO), 0.5, 6));
+      ic.delLocale = o.delLocale === true;
+    }
+    return ic;
+  }
+  function normalizzaScheda(s) {
+    s = s || {};
+    var p = s.palco || {};
+    var palco = { larghezza: limita(aggancia(p.larghezza || 6, PASSO_PALCO), PALCO_MIN, PALCO_MAX),
+      profondita: limita(aggancia(p.profondita || 4, PASSO_PALCO), PALCO_MIN, PALCO_MAX) };
+    // la pedana va disegnata sotto tutto: si mette in testa all'elenco
+    palco.icone = (p.icone || []).slice(0, MAX_ICONE).map(function (o) { return normalizzaIcona(o, palco); })
+      .sort(function (a, b) { return (a.tipo === 'pedana' ? 0 : 1) - (b.tipo === 'pedana' ? 0 : 1); });
+    var canali = (s.canali || []).slice(0, MAX_CANALI).map(normalizzaCanale);
+    return {
+      canali: ordinaCanali(canali),
+      monitor: (s.monitor || []).slice(0, MAX_MIX).map(normalizzaMix),
+      backline: { porta: testoBreve((s.backline || {}).porta, 600), chiede: testoBreve((s.backline || {}).chiede, 600) },
+      prese: testoBreve(s.prese, 400),
+      orari: { carico: leggiOrario((s.orari || {}).carico) || '', soundcheck: leggiOrario((s.orari || {}).soundcheck) || '' },
+      palco: palco,
+      note: testoBreve(s.note, 1000)
+    };
+  }
+  /* Referente tecnico (uno solo, scritto dall'ADMIN): nome e telefono toccabile sul foglio. */
+  function normalizzaReferente(x) {
+    x = x || {};
+    // mioSet (variante batteria): pezzi con posizione relativa al centro del set, in metri (da -3 a +3)
+    var set = (x.mioSet || []).slice(0, 30).filter(function (o) { return o && PEZZI_BATTERIA.indexOf(o.tipo) >= 0; }).map(function (o) {
+      return { tipo: o.tipo, x: Math.round(limita(o.x, -3, 3) * 100) / 100, y: Math.round(limita(o.y, -3, 3) * 100) / 100,
+        rot: ((Math.round(Number(o.rot) / 45) * 45) % 360 + 360) % 360 || 0, etichetta: testoBreve(o.etichetta, 30), canali: testoBreve(o.canali, 20) };
+    });
+    return { nome: testoBreve(x.nome, 40), telefono: testoBreve(x.telefono, 20).replace(/[^0-9+ ]/g, ''), mioSet: set };
+  }
+  /* Revisioni: {rev, data, inviata}. Una modifica dopo un invio apre la Rev successiva. */
+  function revisioneDopoModifica(r, oggi) {
+    r = r || {};
+    var n = Math.max(1, Math.round(Number(r.rev) || 1));
+    if (r.inviata) return { rev: n + 1, data: oggi, inviata: false };
+    return { rev: n, data: r.data || oggi, inviata: false };
+  }
+  function pieDiPagina(r) {
+    var n = Math.max(1, Math.round(Number(r && r.rev) || 1));
+    var d = r && r.data ? String(r.data).split('-').reverse().join('/') : '';
+    return 'Rev. ' + n + (d ? ' · ' + d : '') + (n > 1 ? ' · sostituisce la Rev. ' + (n - 1) : '');
+  }
+
   return {
     VERSIONE_REGOLE: VERSIONE_REGOLE,
+    FAMIGLIE: FAMIGLIE,
+    ASTE: ASTE,
+    FORNITO: FORNITO,
+    TIPI_MONITOR: TIPI_MONITOR,
+    ICONE_PALCO: ICONE_PALCO,
+    PEZZI_BATTERIA: PEZZI_BATTERIA,
+    SET_PARTENZA: SET_PARTENZA,
+    AGGANCIO_FINE: AGGANCIO_FINE,
+    MAX_CANALI: MAX_CANALI,
+    MAX_MIX: MAX_MIX,
+    MAX_ICONE: MAX_ICONE,
+    AGGANCIO: AGGANCIO,
+    PASSO_PALCO: PASSO_PALCO,
+    famigliaDi: famigliaDi,
+    normalizzaCanale: normalizzaCanale,
+    ordinaCanali: ordinaCanali,
+    numeraLinee: numeraLinee,
+    etichettaLinee: etichettaLinee,
+    testoMic: testoMic,
+    normalizzaMix: normalizzaMix,
+    normalizzaIcona: normalizzaIcona,
+    normalizzaScheda: normalizzaScheda,
+    normalizzaReferente: normalizzaReferente,
+    revisioneDopoModifica: revisioneDopoModifica,
+    pieDiPagina: pieDiPagina,
     TAPPA: TAPPA,
     MEMBRI: MEMBRI,
     ADMIN: ADMIN,

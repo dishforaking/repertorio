@@ -259,6 +259,18 @@
     <p class="tenue" id="serateVuote" hidden></p>
     <details id="boxPassate" hidden><summary>Passate (<span id="nPassate">0</span>)</summary><ul class="serate" id="listaPassate"></ul></details>
     <div class="esito" id="esitoSerate" hidden></div>
+    <div class="riquadro" id="riquadroSetup">
+      <div class="testa-struttura"><h2>Setup</h2><span class="tenue piccolo">situazioni ideali per la scheda tecnica</span></div>
+      <ul class="serate" id="listaSetup"></ul>
+      <p class="tenue piccolo" id="setupVuoti">Ancora nessun setup.</p>
+      <button type="button" id="btnNuovoSetup" hidden>+ Nuovo setup</button>
+      <button type="button" id="btnReferente" class="secondario" hidden>Referente tecnico</button>
+      <div id="boxReferente" hidden>
+        <label class="etichetta" for="refNome">Nome</label><input id="refNome" maxlength="40" placeholder="Francesco">
+        <label class="etichetta" for="refTel">Telefono</label><input id="refTel" maxlength="20" inputmode="tel" placeholder="+39 …">
+        <button type="button" id="btnRefSalva">Salva referente</button>
+      </div>
+    </div>
   </section>
 
   <section id="vSerata" class="vista" hidden>
@@ -304,6 +316,7 @@
       <button type="button" id="btnFilePalco" class="secondario">Scarica per il palco</button>
       <p class="tenue piccolo">"Scarica per il palco" salva un file che si apre senza rete anche dove l'app non c'è.</p>
       <button type="button" id="btnAnteprima">Anteprima di stampa</button>
+      <button type="button" id="btnSchedaTecnica" class="secondario" hidden>Scheda tecnica</button>
       <button type="button" id="btnDuplica" class="secondario">Duplica serata</button>
     </div>
     <p class="tenue piccolo" id="sInfo"></p>
@@ -331,6 +344,103 @@
       <p class="tenue piccolo" id="stampaInfo">Il foglio esce così. Dalla finestra di stampa scegli la stampante oppure "Salva come PDF".</p>
     </div>
     <div class="anteprima" id="anteprima"><div id="foglioStampa" class="foglio"></div></div>
+  </section>
+
+  <section id="vScheda" class="vista" hidden>
+    <button type="button" id="kIndietro" class="secondario indietro">◀ Serate</button>
+    <h1 class="gotico k-h1" id="kTitolo">Scheda tecnica</h1>
+    <p class="tenue piccolo" id="kSolaLettura">La scheda la modifica solo l'amministratore: qui la puoi guardare e stampare.</p>
+    <div class="riquadro" id="kCopia" hidden>
+      <p class="tenue piccolo" id="kCopiaTesto"></p>
+      <div class="riga-campi"><select id="kSetupScelta"></select><button type="button" id="kBtnCopia" class="secondario">Riparti dal setup</button></div>
+    </div>
+    <div class="riquadro" id="kNomeRiga" hidden>
+      <label class="etichetta" for="kNome">Nome del setup</label>
+      <input id="kNome" class="grande" maxlength="30" placeholder="Ridotto, Completo, Acustico…">
+    </div>
+    <div class="riquadro k-rev" id="kRev" hidden>
+      <span id="kRevTesto"></span>
+      <button type="button" id="kBtnInviata" class="secondario">Segna come inviata</button>
+    </div>
+    <div id="kCorpo">
+      <nav class="k-schede" id="kSchede">
+        <button type="button" data-k="canali">Canali</button><button type="button" data-k="monitor">Monitor</button><button type="button" data-k="palco">Palco</button><button type="button" data-k="altro">Altro</button>
+      </nav>
+      <div class="k-pannello riquadro" data-k="canali">
+        <div class="testa-struttura"><h2>Channel list</h2><span id="kTotLinee"></span></div>
+        <fieldset id="kCampi">
+          <ul class="sezioni" id="kCanali"></ul>
+          <p class="tenue piccolo" id="kLibere"></p>
+          <button type="button" id="kAggCanale">+ Canale</button>
+        </fieldset>
+        <p class="tenue piccolo">L'ordine segue le famiglie, come nella Scheda Gig; il Click resta sempre ultimo. Le coppie stereo partono da una linea dispari.</p>
+      </div>
+      <div class="k-pannello riquadro" data-k="monitor" hidden>
+        <h2>Monitor</h2>
+        <fieldset id="kCampiMon"><ul class="k-mixes" id="kMonitor"></ul><button type="button" id="kAggMix">+ Mix</button></fieldset>
+      </div>
+      <div class="k-pannello riquadro" data-k="palco" hidden>
+        <h2>Stage plan</h2>
+        <fieldset id="kCampiPalco">
+          <div class="riga-campi">
+            <label class="k-campo"><span class="etichetta">Larghezza (m)</span><input id="kLargh" inputmode="decimal" maxlength="4"></label>
+            <label class="k-campo"><span class="etichetta">Profondità (m)</span><input id="kProf" inputmode="decimal" maxlength="4"></label>
+          </div>
+          <svg id="kSvg" class="k-palco k-editor" xmlns="http://www.w3.org/2000/svg"></svg>
+          <div class="riquadro k-icona" id="kIcona" hidden>
+            <b id="kIcNome"></b>
+            <label class="k-campo"><span class="etichetta">Etichetta</span><input id="kIcEtichetta" maxlength="30" placeholder="GTR1 modeller"></label>
+            <label class="k-campo"><span class="etichetta">Canali</span><input id="kIcCanali" maxlength="20" placeholder="DRUM 1-8"></label>
+            <label class="k-campo" id="kIcPreseRiga"><span class="etichetta">Numero di prese</span><input id="kIcPrese" type="number" min="1" max="12"></label>
+            <div id="kIcPedana" hidden>
+              <div class="riga-campi">
+                <label class="k-campo"><span class="etichetta">Larghezza (m)</span><input id="kPedL" inputmode="decimal" maxlength="4"></label>
+                <label class="k-campo"><span class="etichetta">Profondità (m)</span><input id="kPedP" inputmode="decimal" maxlength="4"></label>
+              </div>
+              <label class="k-check"><input type="checkbox" id="kPedLocale"> Pedana del locale</label>
+            </div>
+            <label class="k-check" id="kIcGruppoRiga" hidden><input type="checkbox" id="kIcGruppo"> Sposta tutta la batteria</label>
+            <div class="riga-campi"><button type="button" id="kIcSx" class="secondario" aria-label="Ruota a sinistra">⟲ 45°</button><button type="button" id="kIcDx" class="secondario" aria-label="Ruota a destra">⟳ 45°</button><button type="button" id="kIcTogli" class="secondario">Togli</button></div>
+          </div>
+          <p class="tenue piccolo">Tocca un oggetto per aggiungerlo al centro del palco, poi trascinalo col dito (si aggancia ogni 25 cm).</p>
+          <div class="k-tavolozza" id="kTavolozza"></div>
+          <h2 class="k-sotto">Batteria</h2>
+          <div class="riga-campi"><button type="button" id="kBtnMettiSet">Metti il mio set</button><button type="button" id="kBtnSalvaSet" class="secondario" hidden>Salva come mio set</button></div>
+          <div class="k-tavolozza" id="kTavBatteria"></div>
+        </fieldset>
+      </div>
+      <div class="k-pannello riquadro" data-k="altro" hidden>
+        <fieldset id="kCampiAltro">
+          <div id="kOrari" class="riga-campi">
+            <label class="k-campo"><span class="etichetta">Carico</span><input id="kCarico" inputmode="decimal" maxlength="5" placeholder="18:00"></label>
+            <label class="k-campo"><span class="etichetta">Soundcheck</span><input id="kSound" inputmode="decimal" maxlength="5" placeholder="19:30"></label>
+          </div>
+          <label class="etichetta" for="kPorta">Backline: cosa porta la band</label><textarea id="kPorta" rows="2" maxlength="600"></textarea>
+          <label class="etichetta" for="kChiede">Backline: cosa chiediamo al locale</label><textarea id="kChiede" rows="2" maxlength="600"></textarea>
+          <label class="etichetta" for="kPrese">Prese 230 V (note)</label><textarea id="kPrese" rows="2" maxlength="400"></textarea>
+          <label class="etichetta" for="kNote">Note</label><textarea id="kNote" rows="3" maxlength="1000"></textarea>
+        </fieldset>
+      </div>
+    </div>
+    <div class="riquadro">
+      <button type="button" id="kBtnFoglio">Foglio e stampa</button>
+      <button type="button" id="kBtnDuplica" class="secondario" hidden>Duplica setup</button>
+    </div>
+    <div class="esito" id="esitoK" hidden></div>
+    <div class="riquadro" id="kElimina" hidden>
+      <h2>Amministrazione</h2>
+      <p class="tenue">Eliminare il setup non tocca le serate già preparate.</p>
+      <button type="button" id="kBtnElimina" class="pericolo" data-testo="Elimina setup">Elimina setup</button>
+    </div>
+  </section>
+
+  <section id="vSchedaStampa" class="vista" hidden>
+    <div class="solo-schermo">
+      <button type="button" id="kStampaIndietro" class="secondario indietro">◀ Scheda</button>
+      <button type="button" id="kStampa">Stampa</button>
+      <p class="tenue piccolo">Due pagine A4. Dalla finestra di stampa scegli la stampante oppure "Salva come PDF".</p>
+    </div>
+    <div class="anteprima" id="anteprimaScheda"><div id="foglioScheda" class="foglio k-foglio"></div></div>
   </section>
 
   <section id="vPalco" class="vista" hidden data-car="Molto grandi">
@@ -426,5 +536,6 @@
 <script src="regole.js"></script>
 <script src="metronomo.js"></script>
 <script src="app.js"></script>
+<script src="scheda.js"></script>
 </body>
 </html>

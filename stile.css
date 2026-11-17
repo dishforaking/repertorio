@@ -441,9 +441,61 @@ body.in-palco main { max-width: 760px; padding: 0 10px; }
   html, body { background: #fff !important; color: #000; padding: 0 !important; margin: 0; }
   body > *:not(main) { display: none !important; }
   main { max-width: none; padding: 0; margin: 0; }
-  main > *:not(#vStampa) { display: none !important; }
-  #vStampa > *:not(.anteprima) { display: none !important; }
+  main > *:not(#vStampa):not(#vSchedaStampa) { display: none !important; }
+  #vStampa > *:not(.anteprima), #vSchedaStampa > *:not(.anteprima) { display: none !important; }
+  .k-foglio .pagina + .pagina { break-before: page; }
   .anteprima { overflow: visible; height: auto !important; margin: 0; }
   .foglio { transform: none !important; padding: 0; width: auto; }
   .foglio .pagina + .pagina { margin-top: 0; border-top: 0; padding-top: 0; break-before: page; }
 }
+
+/* ---------- T8-bis-1 · Scheda tecnica (editor scuro; palco e foglio su bianco, stile B "tecnico pulito") ---------- */
+.k-h1 { font-size: 30px; }
+.k-schede { display: flex; gap: 4px; margin: 6px 0; position: sticky; top: 56px; z-index: 4; background: var(--fondo); padding: 4px 0; }
+.k-schede button { flex: 1; margin: 0; padding: 8px 4px; background: var(--carta); border: 1px solid var(--linea); color: var(--testo); }
+.k-schede button.attivo { border-color: var(--oro); color: var(--oro); font-weight: 700; }
+.k-rev { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.k-rev span { flex: 1; font-weight: 600; }
+.k-rev button { margin: 0; }
+li.k-canale .riga-sez { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.k-linea { flex: none; min-width: 34px; text-align: right; font-weight: 800; color: var(--oro); font-variant-numeric: tabular-nums; }
+.fam { display: inline-block; flex: none; min-width: 22px; height: 18px; padding: 0 3px; border-radius: 3px; color: #fff; font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; }
+.k-det { margin-left: auto; font-size: 12px; color: var(--tenue); text-align: right; }
+.k-campo { display: block; flex: 1; margin: 4px 0; }
+.k-campo input, .k-campo select { width: 100%; }
+.k-check { display: block; margin: 6px 0; }
+ul.k-mixes { list-style: none; padding: 0; margin: 0 0 8px; }
+ul.k-mixes li { border: 1px solid var(--linea); border-radius: 8px; padding: 6px; margin-bottom: 6px; background: var(--carta); }
+ul.k-mixes li input { width: 100%; margin-top: 4px; }
+ul.k-mixes input.corto { max-width: 70px; }
+button.stretto { margin: 0; padding: 4px 10px; }
+.k-palco { display: block; width: 100%; height: auto; background: #fff; border-radius: 4px; }
+.k-editor { touch-action: none; user-select: none; -webkit-user-select: none; max-height: 70vh; }
+.k-icona { cursor: grab; }
+.k-tavolozza { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.k-tav { margin: 0; padding: 4px; display: flex; flex-direction: column; align-items: center; font-size: 11px; line-height: 1.1; }
+.k-tav svg { width: 56px; height: 44px; background: #fff; border-radius: 4px; }
+/* Foglio: due pagine A4 */
+.k-foglio { font-size: 10pt; }
+.k-foglio .k-pagina { display: block; min-height: 270mm; position: relative; padding-bottom: 8mm; }
+.k-foglio .k-testa .tit-f b { font-size: 24pt; }
+.k-foglio h3 { font-family: 'Grenze Gotisch', serif; font-weight: 600; font-size: 15pt; margin: 3mm 0 1.5mm; border-bottom: 1pt solid #000; color: #29367C; }
+.k-info { display: flex; gap: 6mm; font-size: 11pt; margin: 1mm 0; }
+.k-info b { display: block; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .05em; }
+.k-info span { font-weight: 700; }
+.k-foglio .k-palco { width: 100%; max-height: 150mm; border-radius: 0; }
+.k-legenda { display: flex; flex-wrap: wrap; gap: 1mm 4mm; font-size: 8.5pt; margin-top: 1.5mm; }
+.k-leg { display: inline-flex; align-items: center; gap: 1mm; }
+.k-leg-ic { width: 11mm; height: 9mm; }
+.k-testo { margin: 0 0 1.5mm; white-space: pre-wrap; }
+.k-tab { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+.k-tab th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1.5pt solid #000; padding: .6mm 1mm; }
+.k-tab td { border-bottom: .5pt solid #999; padding: .7mm 1mm; vertical-align: top; }
+.k-tab.k-canali td:first-child { font-weight: 800; text-align: right; width: 8mm; }
+.k-tab tr.click td { font-weight: 700; }
+.k-tab tr.libera td { color: #666; font-style: italic; }
+.k-foglio .fam { min-width: 6mm; height: 4mm; line-height: 4mm; font-size: 7pt; border-radius: 1mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.k-sorg { font-weight: 700; }
+.k-fams { display: flex; flex-wrap: wrap; gap: 1mm 4mm; font-size: 8pt; margin-top: 1mm; }
+.k-piede { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; font-size: 8.5pt; font-weight: 700; border-top: 1pt solid #000; padding-top: 1mm; }
+.k-sotto { margin: 12px 0 6px; }
