@@ -401,6 +401,7 @@
             <b id="kIcNome"></b>
             <label class="k-campo"><span class="etichetta">Etichetta</span><input id="kIcEtichetta" maxlength="30" placeholder="GTR1 modeller"></label>
             <label class="k-campo"><span class="etichetta">Canali</span><input id="kIcCanali" maxlength="20" placeholder="DRUM 1-8"></label>
+            <label class="k-campo"><span class="etichetta">Scritta</span><select id="kIcScritta"><option value="sotto">sotto</option><option value="sopra">sopra</option><option value="destra">a destra</option><option value="sinistra">a sinistra</option></select></label>
             <label class="k-campo" id="kIcPreseRiga"><span class="etichetta">Numero di prese</span><input id="kIcPrese" type="number" min="1" max="12"></label>
             <div id="kIcPedana" hidden>
               <div class="riga-campi">
@@ -429,7 +430,8 @@
           <label class="etichetta" for="kPorta">Backline: cosa porta la band</label><textarea id="kPorta" rows="2" maxlength="600"></textarea>
           <label class="etichetta" for="kChiede">Backline: cosa chiediamo al locale</label><textarea id="kChiede" rows="2" maxlength="600"></textarea>
           <label class="etichetta" for="kPrese">Prese 230 V (note)</label><textarea id="kPrese" rows="2" maxlength="400"></textarea>
-          <label class="etichetta" for="kNote">Note</label><textarea id="kNote" rows="3" maxlength="1000"></textarea>
+          <label class="etichetta" for="kNote">Note tecniche (righe che iniziano con "-" diventano un elenco)</label><textarea id="kNote" rows="3" maxlength="1000"></textarea>
+          <label class="etichetta" for="kOspitalita">Ospitalità (camerino, bevande…)</label><textarea id="kOspitalita" rows="3" maxlength="1000"></textarea>
         </fieldset>
       </div>
     </div>

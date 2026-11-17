@@ -15,10 +15,11 @@
  *     Correzione del collaudo T8 (v8): il foglio trasforma "4/4" in una data; metroLetto lo riporta a "4/4".
  * T8-sync (v9): palco sincronizzato. Messaggio della batteria (start, pronto, fermo, diretta, fine), controllo dei
  *     messaggi ricevuti e vista calcolata da ogni telefono con il proprio orologio (corretto sul server).
+ * T8-bis-1 (v11, correzioni del collaudo 17/11): aste nuove, asta da, riepilogo, nome stereo, note a elenco, ospitalità, posizione delle scritte.
  * T8-bis-1 (v10): scheda tecnica (famiglie, linee e coppie stereo, Click ultimo, monitor, stage plan, revisioni).
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 10;
+  var VERSIONE_REGOLE = 11;
   var TAPPA = 8;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
@@ -1390,7 +1391,10 @@ var Regole = (function () {
     { id: 'basi', nome: 'Basi', lettera: 'Ba', colore: '#5D6B78' },
     { id: 'aux', nome: 'Aux', lettera: 'X', colore: '#8D6E63' }
   ];
-  var ASTE = ['corta', 'alta', 'giraffa', 'clamp', 'nessuna'];
+  // Correzioni del collaudo (17/11/2026, C1): asta dritta del cantante; "alta" → dritta e "corta" → giraffa corta nelle schede vecchie
+  var ASTE = ['dritta', 'giraffa', 'giraffa corta', 'clamp', 'nessuna'];
+  var ASTE_VECCHIE = { alta: 'dritta', corta: 'giraffa corta' };
+  var POSIZIONI_SCRITTA = ['sotto', 'sopra', 'destra', 'sinistra'];
   var FORNITO = ['band', 'locale'];
   var TIPI_MONITOR = ['wedge', 'IEM stereo', 'IEM mono'];
   // Variante del 17/11/2026 (batteria a pezzi): ogni pezzo è un'icona sua; 'batteria' (disegno fisso) resta solo per le schede vecchie.
@@ -1410,6 +1414,8 @@ var Regole = (function () {
   var PALCO_MIN = 2, PALCO_MAX = 30, PASSO_PALCO = 0.5, AGGANCIO = 0.25;
 
   function testoBreve(v, max) { return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max); }
+  // (non ovvio, trovato nel collaudo 17/11) i testi lunghi tengono gli a capo: testoBreve li toglieva e l'elenco delle note finiva su una riga
+  function testoLungo(v, max) { return String(v === undefined || v === null ? '' : v).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000b-\u001f]/g, ' ').trim().slice(0, max); }
   // id interni alla scheda (canali, mix, icone): non sono righe del foglio, basta che inizino con una lettera.
   function idInterno(id) { return typeof id === 'string' && /^[A-Za-z][A-Za-z0-9]{0,23}$/.test(id); }
   function indiceFamiglia(id) { for (var i = 0; i < FAMIGLIE.length; i++) if (FAMIGLIE[i].id === id) return i; return FAMIGLIE.length - 1; }
@@ -1426,9 +1432,11 @@ var Regole = (function () {
       famiglia: click ? 'aux' : FAMIGLIE[indiceFamiglia(c.famiglia)].id,
       stereo: c.stereo === true,
       mic: testoBreve(c.mic, 40),
-      asta: ASTE.indexOf(c.asta) >= 0 ? c.asta : 'nessuna',
+      asta: ASTE.indexOf(ASTE_VECCHIE[c.asta] || c.asta) >= 0 ? (ASTE_VECCHIE[c.asta] || c.asta) : 'nessuna',
       phantom: c.phantom === true,
-      fornito: FORNITO.indexOf(c.fornito) >= 0 ? c.fornito : 'band',
+      fornito: FORNITO.indexOf(c.fornito) >= 0 ? c.fornito : 'band',   // chi porta il microfono / la DI
+      // C1: chi porta l'asta, a parte (nelle schede vecchie vale come il microfono)
+      astaDa: FORNITO.indexOf(c.astaDa) >= 0 ? c.astaDa : (FORNITO.indexOf(c.fornito) >= 0 ? c.fornito : 'band'),
       note: testoBreve(c.note, 80),
       click: click
     };
@@ -1457,8 +1465,48 @@ var Regole = (function () {
   function testoMic(m) {
     m = testoBreve(m, 40);
     if (!m) return '';
+    if (/^modeller$/i.test(m)) return 'Modeller (uscita XLR, niente DI)';   // C6: confermato da Francesco, tutti in XLR
     if (/^(DI|modeller|playback|linea)$/i.test(m) || /equivalente/i.test(m)) return m;
     return m + ' o equivalente';
+  }
+  /* C5: il nome di una sorgente stereo senza "L+R", "L/R", "LR" in fondo (l'app aggiunge L e R da sola). */
+  function nomeLinea(sorgente, lato) {
+    var n = String(sorgente || '').replace(/\s*(L\s*\+\s*R|L\s*\/\s*R|LR)\s*$/i, '').trim();
+    return lato ? (n ? n + ' ' + lato : lato) : String(sorgente || '');
+  }
+  /* C2: riepilogo per il locale e per la band, contato per LINEA (una coppia stereo microfonata = 2 microfoni, 2 aste). */
+  function riepilogoScheda(canali) {
+    var vuoto = function () { return { mic: {}, aste: {}, di: 0, ordineMic: [], ordineAste: [] }; };
+    var r = { locale: vuoto(), band: vuoto(), phantom: 0 };
+    var conta = function (q, mappa, ordine, chiave) { if (!q[mappa][chiave]) { q[mappa][chiave] = 0; q[ordine].push(chiave); } q[mappa][chiave]++; };
+    numeraLinee(canali).forEach(function (x) {
+      if (x.libera) return;
+      var c = x.canale, m = testoBreve(c.mic, 40);
+      if (c.phantom) r.phantom++;
+      if (m) { if (/^DI$/i.test(m)) r[c.fornito].di++; else conta(r[c.fornito], 'mic', 'ordineMic', /^modeller$/i.test(m) ? 'Modeller' : m); }
+      if (c.asta !== 'nessuna') conta(r[c.astaDa], 'aste', 'ordineAste', c.asta);
+    });
+    var testo = function (q) {
+      var parti = [];
+      var mic = q.ordineMic.map(function (k) { return k + ' × ' + q.mic[k]; });
+      var aste = q.ordineAste.map(function (k) { return k + ' × ' + q.aste[k]; });
+      if (mic.length) parti.push({ voce: 'Microfoni e sorgenti', testo: mic.join(', ') });
+      if (q.di) parti.push({ voce: 'DI', testo: String(q.di) });
+      if (aste.length) parti.push({ voce: 'Aste', testo: aste.join(', ') });
+      return parti;
+    };
+    return { locale: testo(r.locale), band: testo(r.band), phantom: r.phantom };
+  }
+  /* C7: testo con righe "- …" o "• …" diviso in paragrafi ed elenchi. */
+  function righeTesto(t) {
+    var out = [];
+    String(t || '').split(/\r?\n/).forEach(function (riga) {
+      var r = riga.trim(); if (!r) return;
+      var m = r.match(/^[-•*]\s*(.*)$/);
+      if (m) { if (!out.length || out[out.length - 1].tipo !== 'elenco') out.push({ tipo: 'elenco', voci: [] }); if (m[1]) out[out.length - 1].voci.push(m[1]); }
+      else out.push({ tipo: 'paragrafo', testo: r });
+    });
+    return out;
   }
   function normalizzaMix(m) {
     m = m || {};
@@ -1475,6 +1523,7 @@ var Regole = (function () {
       etichetta: testoBreve(o.etichetta, 30), canali: testoBreve(o.canali, 20) };
     if (tipo === 'presa') ic.prese = limita(Math.round(o.prese || 1), 1, 12);
     if (pezzo) ic.gruppo = 'batteria';
+    if (POSIZIONI_SCRITTA.indexOf(o.scritta) > 0) ic.scritta = o.scritta;   // C3: "sotto" è il valore di partenza e non si salva
     if (tipo === 'pedana') {
       ic.larghezza = tondo(limita(aggancia(o.larghezza || 2, AGGANCIO), 0.5, 6));
       ic.profondita = tondo(limita(aggancia(o.profondita || 2, AGGANCIO), 0.5, 6));
@@ -1494,11 +1543,12 @@ var Regole = (function () {
     return {
       canali: ordinaCanali(canali),
       monitor: (s.monitor || []).slice(0, MAX_MIX).map(normalizzaMix),
-      backline: { porta: testoBreve((s.backline || {}).porta, 600), chiede: testoBreve((s.backline || {}).chiede, 600) },
-      prese: testoBreve(s.prese, 400),
+      backline: { porta: testoLungo((s.backline || {}).porta, 600), chiede: testoLungo((s.backline || {}).chiede, 600) },
+      prese: testoLungo(s.prese, 400),
       orari: { carico: leggiOrario((s.orari || {}).carico) || '', soundcheck: leggiOrario((s.orari || {}).soundcheck) || '' },
       palco: palco,
-      note: testoBreve(s.note, 1000)
+      note: testoLungo(s.note, 1000),
+      ospitalita: testoLungo(s.ospitalita, 1000)   // C7: camerino e ospitalità, separati dalle note tecniche
     };
   }
   /* Referente tecnico (uno solo, scritto dall'ADMIN): nome e telefono toccabile sul foglio. */
@@ -1531,6 +1581,10 @@ var Regole = (function () {
     FORNITO: FORNITO,
     TIPI_MONITOR: TIPI_MONITOR,
     ICONE_PALCO: ICONE_PALCO,
+    POSIZIONI_SCRITTA: POSIZIONI_SCRITTA,
+    nomeLinea: nomeLinea,
+    riepilogoScheda: riepilogoScheda,
+    righeTesto: righeTesto,
     PEZZI_BATTERIA: PEZZI_BATTERIA,
     SET_PARTENZA: SET_PARTENZA,
     AGGANCIO_FINE: AGGANCIO_FINE,

@@ -94,9 +94,11 @@
     riempi();
     vai('vScheda');
   }
+  // (trovato nel collaudo 17/11) un setup chiamato "Setup Prove…" usciva "Setup Setup Prove…"
+  const nomeSetup = (n) => (/^setup\b/i.test(String(n || '').trim()) ? String(n).trim() : 'Setup ' + (n || ''));
   function serataDi(k) { return k && k.tipo === 'serata' ? serateTutte().find((s) => s.id === k.proprietario) || null : null; }
   function titolo() {
-    if (sk.tipo === 'setup') return 'Setup ' + (sk.nome || '');
+    if (sk.tipo === 'setup') return nomeSetup(sk.nome);
     const s = serataDi(sk);
     return 'Scheda tecnica' + (s ? ' · ' + dataSerata(s, true) + (s.locale ? ' · ' + s.locale : '') : '');
   }
@@ -213,7 +215,7 @@
       const man = el('span', 'maniglia', '≡');
       const lin = el('span', 'k-linea', R.etichettaLinee(c, x.id));
       const nome = el('span', 'titolo', x.sorgente || '(senza nome)');
-      const det = el('span', 'k-det', [R.testoMic(x.mic), x.phantom ? '48V' : '', x.click ? 'solo monitor' : '', x.fornito === 'locale' ? 'locale' : ''].filter(Boolean).join(' · '));
+      const det = el('span', 'k-det', [R.testoMic(x.mic), x.phantom ? '48V' : '', x.click ? 'solo monitor' : '', x.fornito === 'locale' ? 'mic locale' : ''].filter(Boolean).join(' · '));
       testa.append(man, lin, famigliaQuadro(x.famiglia), nome, det);
       testa.addEventListener('click', (e) => { if (e.target === man) return; canaleAperto = canaleAperto === x.id ? null : x.id; sk.contenuto = R.normalizzaScheda(sk.contenuto); disegnaCanali(); });
       li.append(testa);
@@ -243,17 +245,18 @@
   function editorCanale(x) {
     const box = el('div', 'corpo-sez');
     const t = (v, max, ph) => { const i = el('input'); i.value = v || ''; i.maxLength = max; if (ph) i.placeholder = ph; return i; };
-    const sorg = t(x.sorgente, 40, 'Kick, Vox Lead Ale…'), mic = t(x.mic, 40, 'SM57, DI, modeller, playback'), note = t(x.note, 80);
+    const sorg = t(x.sorgente, 40, x.stereo ? 'Pan, Basi… (L e R li aggiunge l\'app)' : 'Kick, Vox Lead Ale…'), mic = t(x.mic, 40, 'SM57, DI, modeller, playback'), note = t(x.note, 80);
     const fam = scelta(R.FAMIGLIE.map((f) => f.id), x.famiglia, R.FAMIGLIE.map((f) => f.nome));
     const st = scelta(['mono', 'stereo'], x.stereo ? 'stereo' : 'mono', ['Mono', 'Stereo (L/R)']);
     const asta = scelta(R.ASTE, x.asta);
     const forn = scelta(R.FORNITO, x.fornito, ['Band', 'Locale']);
+    const astaDa = scelta(R.FORNITO, x.astaDa, ['Band', 'Locale']);   // C1: chi porta l'asta, a parte dal microfono
     const ph = el('input'); ph.type = 'checkbox'; ph.checked = x.phantom;
     const ck = el('input'); ck.type = 'checkbox'; ck.checked = x.click;
     // (non ovvio) normalizzaScheda crea oggetti nuovi: il canale si ritrova sempre per id, mai con il riferimento vecchio
     const leggi = () => {
       const y = sk.contenuto.canali.find((z) => z.id === x.id); if (!y) return;
-      Object.assign(y, { sorgente: sorg.value, mic: mic.value, note: note.value, famiglia: fam.value, stereo: st.value === 'stereo', asta: asta.value, fornito: forn.value, phantom: ph.checked, click: ck.checked });
+      Object.assign(y, { sorgente: sorg.value, mic: mic.value, note: note.value, famiglia: fam.value, stereo: st.value === 'stereo', asta: asta.value, fornito: forn.value, astaDa: astaDa.value, phantom: ph.checked, click: ck.checked });
     };
     // (non ovvio) mentre si scrive NON si ridisegna la lista: passando al campo dopo, il ridisegno toglieva il campo da sotto il dito.
     // Si aggiorna solo la riga in testa; l'ordine per famiglia si rifà quando il riquadro si chiude o cambia una scelta.
@@ -261,16 +264,16 @@
       const li = box.closest('li'); if (!li) return;
       const y = sk.contenuto.canali.find((z) => z.id === x.id) || x;
       li.querySelector('.titolo').textContent = y.sorgente || '(senza nome)';
-      li.querySelector('.k-det').textContent = [R.testoMic(y.mic), y.phantom ? '48V' : '', y.click ? 'solo monitor' : '', y.fornito === 'locale' ? 'locale' : ''].filter(Boolean).join(' · ');
+      li.querySelector('.k-det').textContent = [R.testoMic(y.mic), y.phantom ? '48V' : '', y.click ? 'solo monitor' : '', y.fornito === 'locale' ? 'mic locale' : ''].filter(Boolean).join(' · ');
     };
     [sorg, mic, note].forEach((i) => i.addEventListener('input', () => { leggi(); aggiornaTesta(); cambio(); }));
-    [fam, st, asta, forn, ph, ck].forEach((i) => i.addEventListener('change', () => { leggi(); sk.contenuto = R.normalizzaScheda(sk.contenuto); disegnaCanali(); cambio(); }));
+    [fam, st, asta, forn, astaDa, ph, ck].forEach((i) => i.addEventListener('change', () => { leggi(); sk.contenuto = R.normalizzaScheda(sk.contenuto); disegnaCanali(); cambio(); }));
     const pc = el('label', 'k-check'); pc.append(ph, document.createTextNode(' 48V'));
     const cc = el('label', 'k-check'); cc.append(ck, document.createTextNode(' Click (solo monitor, mai in PA)'));
     const elim = el('button', 'secondario', 'Togli canale'); elim.type = 'button';
     elim.addEventListener('click', () => { sk.contenuto.canali = sk.contenuto.canali.filter((y) => y.id !== x.id); canaleAperto = null; disegnaCanali(); cambio(); });
     box.append(campo('Sorgente', sorg), campo('Famiglia', fam), campo('Mono / stereo', st), campo('Mic / DI (si aggiunge "o equivalente")', mic),
-      campo('Asta', asta), campo('Fornito da', forn), pc, cc, campo('Note', note), elim);
+      campo('Microfono / DI fornito da', forn), campo('Asta', asta), campo('Asta fornita da', astaDa), pc, cc, campo('Note', note), elim);
     return box;
   }
   function nuovoCanale() {
@@ -304,13 +307,13 @@
   /* ---------- Altro: backline, prese, orari, note ---------- */
   function riempiAltro() {
     const c = sk.contenuto;
-    $('kPorta').value = c.backline.porta; $('kChiede').value = c.backline.chiede; $('kPrese').value = c.prese; $('kNote').value = c.note;
+    $('kPorta').value = c.backline.porta; $('kChiede').value = c.backline.chiede; $('kPrese').value = c.prese; $('kNote').value = c.note; $('kOspitalita').value = c.ospitalita;
     $('kCarico').value = c.orari.carico; $('kSound').value = c.orari.soundcheck;
     $('kOrari').hidden = sk.tipo !== 'serata';
   }
   function leggiAltro() {
     const c = sk.contenuto;
-    c.backline = { porta: $('kPorta').value, chiede: $('kChiede').value }; c.prese = $('kPrese').value; c.note = $('kNote').value;
+    c.backline = { porta: $('kPorta').value, chiede: $('kChiede').value }; c.prese = $('kPrese').value; c.note = $('kNote').value; c.ospitalita = $('kOspitalita').value;
     c.orari = { carico: $('kCarico').value, soundcheck: $('kSound').value };
   }
 
@@ -386,21 +389,22 @@
   /** Disegna il palco in un <svg> (unità = cm). Con editor = true le icone si toccano e si trascinano. */
   function disegnaPalco(svg, palco, editor) {
     svg.textContent = '';
-    const W = palco.larghezza * 100, H = palco.profondita * 100, M = 34;
+    // C3: margine basso più grande, così "PUBBLICO" sta sotto le scritte degli oggetti sul bordo del palco
+    const W = palco.larghezza * 100, H = palco.profondita * 100, M = 34, MB = 70;
     if (editor && zoom > 1) {
       // (non ovvio) stessa proporzione della vista intera: la finestra resta grande uguale sullo schermo, dentro si ingrandisce
-      const vw = (W + 2 * M) / zoom, vh = (H + 2 * M) / zoom;
+      const vw = (W + 2 * M) / zoom, vh = (H + M + MB) / zoom;
       const c = vista || { x: W / 200, y: H / 200 };
-      const x0 = Math.min(W + M - vw, Math.max(-M, c.x * 100 - vw / 2)), y0 = Math.min(H + M - vh, Math.max(-M, c.y * 100 - vh / 2));
+      const x0 = Math.min(W + M - vw, Math.max(-M, c.x * 100 - vw / 2)), y0 = Math.min(H + MB - vh, Math.max(-M, c.y * 100 - vh / 2));
       vista = { x: (x0 + vw / 2) / 100, y: (y0 + vh / 2) / 100 };
       svg.setAttribute('viewBox', x0 + ' ' + y0 + ' ' + vw + ' ' + vh);
-    } else svg.setAttribute('viewBox', (-M) + ' ' + (-M) + ' ' + (W + 2 * M) + ' ' + (H + 2 * M));
+    } else svg.setAttribute('viewBox', (-M) + ' ' + (-M) + ' ' + (W + 2 * M) + ' ' + (H + M + MB));
     const quad = s('g', { stroke: '#c8c8c8', 'stroke-width': 1 });
     for (let x = 50; x < W; x += 50) quad.append(s('line', { x1: x, x2: x, y1: 0, y2: H, 'stroke-width': x % 100 ? .6 : 1.2 }));
     for (let y = 50; y < H; y += 50) quad.append(s('line', { x1: 0, x2: W, y1: y, y2: y, 'stroke-width': y % 100 ? .6 : 1.2 }));
     svg.append(s('rect', { x: 0, y: 0, width: W, height: H, fill: '#fff' }), quad, s('rect', { x: 0, y: 0, width: W, height: H, fill: 'none', stroke: '#000', 'stroke-width': 3 }));
-    svg.append(testoSvg(W / 2, -M / 2, 'FONDO', 16, { 'letter-spacing': 2 }), testoSvg(W / 2, H + M / 2, 'PUBBLICO', 18, { 'letter-spacing': 3 }));
-    svg.append(testoSvg(-M / 2, H / 2, String(palco.profondita).replace('.', ',') + ' m', 13, { transform: 'rotate(-90 ' + (-M / 2) + ' ' + H / 2 + ')' }), testoSvg(W - 30, H + M / 2, String(palco.larghezza).replace('.', ',') + ' m', 13));
+    svg.append(testoSvg(W / 2, -M / 2, 'FONDO', 16, { 'letter-spacing': 2 }), testoSvg(W / 2, H + MB - 16, 'PUBBLICO', 18, { 'letter-spacing': 3, class: 'k-pubblico' }));
+    svg.append(testoSvg(-M / 2, H / 2, String(palco.profondita).replace('.', ',') + ' m', 13, { transform: 'rotate(-90 ' + (-M / 2) + ' ' + H / 2 + ')' }), testoSvg(W - 30, -M / 2, String(palco.larghezza).replace('.', ',') + ' m', 13));
     palco.icone.forEach((o) => {
       const g = s('g', { transform: 'translate(' + o.x * 100 + ' ' + o.y * 100 + ')', class: 'k-icona' + (editor && iconaScelta === o.id ? ' scelta' : '') });
       g.dataset.id = o.id;
@@ -409,8 +413,15 @@
       const [w1, h1] = misura(o), pezzo = !!o.gruppo;
       const scritta = o.tipo === 'pedana' ? [o.etichetta || ('Pedana ' + (o.delLocale ? 'del locale' : 'della band')), String(o.larghezza).replace('.', ',') + ' × ' + String(o.profondita).replace('.', ',') + ' m'].join(' · ')
         : [o.etichetta, o.canali].filter(Boolean).join(' · ');
-      const yScritta = o.tipo === 'pedana' ? h1 / 2 - 10 : (pezzo ? 0 : Math.max(w1, h1) / 2 + 12);
-      if (scritta) g.append(testoSvg(0, yScritta, scritta, pezzo ? 10 : 13, { fill: '#000', stroke: '#fff', 'stroke-width': pezzo ? 3 : 4, 'paint-order': 'stroke' }));
+      // C3: posizione della scritta scelta per ogni oggetto (sotto, sopra, a destra, a sinistra)
+      const raggio = Math.max(w1, h1) / 2, dove = o.scritta || 'sotto';
+      let xs = 0, ys = raggio + 12, anc = 'middle';
+      if (o.tipo === 'pedana') ys = h1 / 2 - 10;
+      else if (pezzo && dove === 'sotto') ys = 0;
+      else if (dove === 'sopra') ys = -raggio - 12;
+      else if (dove === 'destra') { xs = raggio + 6; ys = 0; anc = 'start'; }
+      else if (dove === 'sinistra') { xs = -raggio - 6; ys = 0; anc = 'end'; }
+      if (scritta) g.append(testoSvg(xs, ys, scritta, pezzo ? 10 : 13, { fill: '#000', stroke: '#fff', 'stroke-width': pezzo ? 3 : 4, 'paint-order': 'stroke', 'text-anchor': anc, class: 'k-scritta' }));
       if (editor && iconaScelta === o.id) { const r = Math.max(w1, h1) / 2 + 6; g.insertBefore(o.tipo === 'pedana' ? s('rect', { x: -w1 / 2 - 4, y: -h1 / 2 - 4, width: w1 + 8, height: h1 + 8, fill: 'none', stroke: '#B62E27', 'stroke-width': 3, 'stroke-dasharray': '8 5' }) : s('circle', { cx: 0, cy: 0, r, fill: 'none', stroke: '#B62E27', 'stroke-width': 3, 'stroke-dasharray': '8 5' }), g.firstChild); }
       svg.append(g);
     });
@@ -428,7 +439,7 @@
     $('kIcona').hidden = !o;
     if (o) {
       $('kIcNome').textContent = NOMI_ICONA[o.tipo];
-      $('kIcEtichetta').value = o.etichetta; $('kIcCanali').value = o.canali;
+      $('kIcEtichetta').value = o.etichetta; $('kIcCanali').value = o.canali; $('kIcScritta').value = o.scritta || 'sotto';
       $('kIcPreseRiga').hidden = o.tipo !== 'presa'; $('kIcPrese').value = o.prese || 1;
       $('kIcPedana').hidden = o.tipo !== 'pedana';
       if (o.tipo === 'pedana') { $('kPedL').value = String(o.larghezza).replace('.', ','); $('kPedP').value = String(o.profondita).replace('.', ','); $('kPedLocale').checked = o.delLocale; }
@@ -596,12 +607,12 @@
     const img = el('img'); img.src = 'logo/logo-dish-chiaro-scritta.svg'; img.alt = 'Dish for a King';
     const s1 = serataDi(k);
     const tt = el('div', 'tit-f');
-    tt.append(el('b', '', 'Scheda tecnica'), el('span', '', s1 ? [dataSerata(s1), s1.locale].filter(Boolean).join(' · ') : 'Setup ' + (k.nome || '')));
+    tt.append(el('b', '', 'Scheda tecnica'), el('span', '', s1 ? [dataSerata(s1), s1.locale].filter(Boolean).join(' · ') : nomeSetup(k.nome)));
     t.append(img, tt); return t;
   }
   function piedeK(k, n, tot) {
     const p = el('div', 'k-piede');
-    p.append(el('span', '', k.tipo === 'serata' && k.rev ? R.pieDiPagina({ rev: k.rev, data: k.revData }) : 'Setup ' + (k.nome || '') + ' · situazione ideale'), el('span', '', 'Pagina ' + n + ' di ' + tot));
+    p.append(el('span', '', k.tipo === 'serata' && k.rev ? R.pieDiPagina({ rev: k.rev, data: k.revData }) : nomeSetup(k.nome) + ' · situazione ideale'), el('span', '', 'Pagina ' + n + ' di ' + tot));
     return p;
   }
   function tabella(intest, righe, classe) {
@@ -626,10 +637,23 @@
     }
     p1.append(info, el('h3', '', 'Stage plan'));
     const svg = s('svg', { class: 'k-palco', xmlns: NS }); disegnaPalco(svg, c.palco, false); p1.append(svg);
-    const tipi = []; c.palco.icone.forEach((o) => { if (tipi.indexOf(o.tipo) < 0) tipi.push(o.tipo); });
-    if (tipi.length) {
+    // C4: in legenda solo gli oggetti usati; i pezzi della batteria in una voce sola, icone più grandi
+    const tipi = []; let batteria = false;
+    c.palco.icone.forEach((o) => { if (o.gruppo === 'batteria') batteria = true; else if (tipi.indexOf(o.tipo) < 0) tipi.push(o.tipo); });
+    if (tipi.length || batteria) {
       const lg = el('div', 'k-legenda');
-      tipi.forEach((t) => { const v = s('svg', { viewBox: '-100 -80 200 160', class: 'k-leg-ic' }); v.append(figura(t, 1, t === 'pedana' ? { larghezza: 1.6, profondita: 1.2 } : null)); const d = el('span', 'k-leg'); d.append(v, el('span', '', NOMI_ICONA[t])); lg.append(d); });
+      if (batteria) {
+        const d = el('span', 'k-leg k-leg-batt');
+        const usa = (lista) => c.palco.icone.some((o) => lista.indexOf(o.tipo) >= 0);
+        const parti = [], esempi = [];
+        if (usa(['cassa', 'rullante', 'tom', 'timpano'])) { parti.push('fusti a tratto pieno'); esempi.push('timpano'); }
+        if (usa(['hihat', 'ride', 'crash', 'splash', 'china'])) { parti.push('piatti tratteggiati'); esempi.push('crash'); }
+        if (usa(['sgabello'])) { parti.push('sgabello grigio'); esempi.push('sgabello'); }
+        esempi.forEach((t) => { const v = s('svg', { viewBox: '-28 -28 56 56', class: 'k-leg-ic' }); v.append(figura(t, 1)); d.append(v); });
+        d.append(el('span', '', 'Batteria' + (parti.length ? ': ' + parti.join(', ') : '')));
+        lg.append(d);
+      }
+      tipi.forEach((t) => { const v = s('svg', { viewBox: t === 'pedana' ? '-90 -70 180 140' : '-60 -45 120 90', class: 'k-leg-ic' }); v.append(figura(t, 1, t === 'pedana' ? { larghezza: 1.6, profondita: 1.2 } : null)); const d = el('span', 'k-leg'); d.append(v, el('span', '', NOMI_ICONA[t])); lg.append(d); });
       p1.append(lg);
     }
     const prese = c.palco.icone.filter((o) => o.tipo === 'presa');
@@ -639,26 +663,50 @@
     const p2 = el('div', 'pagina k-pagina');
     p2.append(testaFoglioK(k), el('h3', '', 'Channel list'));
     const righe = R.numeraLinee(c.canali).map((x) => {
-      if (x.libera) return { classe: 'libera', celle: [String(x.linea), 'libera', '', '', '', '', ''] };
-      const y = x.canale, nome = el('span', 'k-sorg'); nome.append(famigliaQuadro(y.famiglia), document.createTextNode(' ' + y.sorgente + (x.lato ? ' ' + x.lato : '')));
-      return { classe: y.click ? 'click' : '', celle: [String(x.linea), nome, R.testoMic(y.mic), y.asta === 'nessuna' ? '—' : y.asta, y.phantom ? '48V' : '', y.fornito === 'locale' ? 'Locale' : 'Band', [y.click ? 'SOLO MONITOR, MAI IN PA' : '', y.note].filter(Boolean).join(' · ')] };
+      if (x.libera) return { classe: 'libera', celle: [String(x.linea), 'libera', '', '', '', '', '', ''] };
+      const y = x.canale, nome = el('span', 'k-sorg'); nome.append(famigliaQuadro(y.famiglia), document.createTextNode(' ' + R.nomeLinea(y.sorgente, x.lato)));
+      const chi = (v) => (v === 'locale' ? 'Locale' : 'Band');
+      return { classe: y.click ? 'click' : '', celle: [String(x.linea), nome, R.testoMic(y.mic), y.mic ? chi(y.fornito) : '—', y.asta === 'nessuna' ? '—' : y.asta, y.asta === 'nessuna' ? '—' : chi(y.astaDa), y.phantom ? '48V' : '', [y.click ? 'SOLO MONITOR, MAI IN PA' : '', y.note].filter(Boolean).join(' · ')] };
     });
-    p2.append(tabella(['Ch', 'Sorgente', 'Mic / DI', 'Asta', '48V', 'Fornito da', 'Note'], righe, 'k-canali'));
+    // C1: due colonne separate, "Mic da" e "Asta da"
+    p2.append(tabella(['Ch', 'Sorgente', 'Mic / DI', 'Mic da', 'Asta', 'Asta da', '48V', 'Note'], righe, 'k-canali'));
     const fams = []; c.canali.forEach((y) => { if (fams.indexOf(y.famiglia) < 0) fams.push(y.famiglia); });
     const lf = el('div', 'k-fams'); fams.forEach((fm) => { const d = el('span'); d.append(famigliaQuadro(fm), document.createTextNode(' ' + R.famigliaDi(fm).nome)); lf.append(d); }); p2.append(lf);
+    // C2: riepilogo calcolato dalla channel list
+    const rp = R.riepilogoScheda(c.canali);
+    if (rp.locale.length || rp.band.length) {
+      const box = el('div', 'k-riep');
+      const blocco = (tit, parti) => { if (!parti.length) return; const d = el('div'); d.append(el('b', '', tit)); parti.forEach((x) => d.append(el('div', '', x.voce + ': ' + x.testo))); box.append(d); };
+      blocco('Dal locale ci servono', rp.locale);
+      blocco('Porta la band', rp.band);
+      if (rp.phantom) box.append(el('div', 'k-riep-48', '48V su ' + rp.phantom + (rp.phantom === 1 ? ' linea' : ' linee')));
+      p2.append(box);
+    }
     if (c.monitor.length) {
       p2.append(el('h3', '', 'Monitor'));
-      p2.append(tabella(['Mix', 'Chi', 'Tipo', 'Posizione', 'In cuffia o in spia'], c.monitor.map((m) => ({ celle: [m.mix, m.chi, m.tipo, m.posizione, m.ascolto] })), 'k-mon'));
+      // C7: la colonna "In cuffia o in spia" si nasconde da sola se è vuota su tutte le righe
+      const conAscolto = c.monitor.some((m) => m.ascolto);
+      p2.append(tabella(['Mix', 'Chi', 'Tipo', 'Posizione'].concat(conAscolto ? ['In cuffia o in spia'] : []), c.monitor.map((m) => ({ celle: [m.mix, m.chi, m.tipo, m.posizione].concat(conAscolto ? [m.ascolto] : []) })), 'k-mon'));
     }
     if (c.backline.porta || c.backline.chiede) {
       p2.append(el('h3', '', 'Backline'));
-      if (c.backline.porta) p2.append(el('p', 'k-testo', 'La band porta: ' + c.backline.porta));
-      if (c.backline.chiede) p2.append(el('p', 'k-testo', 'Chiediamo al locale: ' + c.backline.chiede));
+      if (c.backline.porta) p2.append(el('b', 'k-sottotit', 'La band porta'), testoConElenco(c.backline.porta));
+      if (c.backline.chiede) p2.append(el('b', 'k-sottotit', 'Chiediamo al locale'), testoConElenco(c.backline.chiede));
     }
-    if (c.note) p2.append(el('h3', '', 'Note'), el('p', 'k-testo', c.note));
+    if (c.note) p2.append(el('h3', '', 'Note'), testoConElenco(c.note));
+    if (c.ospitalita) p2.append(el('h3', '', 'Ospitalità'), testoConElenco(c.ospitalita));
     p1.append(piedeK(k, 1, 2)); p2.append(piedeK(k, 2, 2));
     f.append(p1, p2);
     scalaAnteprimaK();
+  }
+  /** C7: paragrafi ed elenchi puntati (righe che iniziano con "-"). */
+  function testoConElenco(t) {
+    const d = el('div', 'k-testo');
+    R.righeTesto(t).forEach((b) => {
+      if (b.tipo === 'paragrafo') d.append(el('p', '', b.testo));
+      else { const ul = el('ul'); b.voci.forEach((v) => ul.append(el('li', '', v))); d.append(ul); }
+    });
+    return d;
   }
   function scalaAnteprimaK() {
     const f = $('foglioScheda'), box = $('anteprimaScheda');
@@ -670,7 +718,7 @@
   function nomeFileK(k) {
     const s1 = serataDi(k);
     const pul = (t) => String(t || '').replace(/[\/\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!s1) return 'Setup ' + pul(k.nome) + ' - Scheda tecnica Dish for a King';
+    if (!s1) return pul(nomeSetup(k.nome)) + ' - Scheda tecnica Dish for a King';
     return [s1.data, pul(s1.locale)].filter(Boolean).join(' ') + ' - Scheda tecnica Dish for a King';
   }
   function apriFoglio() {
@@ -706,7 +754,7 @@
     $('kNome').addEventListener('input', () => { sk.nome = $('kNome').value; $('kTitolo').textContent = titolo(); cambio(); });
     $('kAggCanale').addEventListener('click', nuovoCanale);
     $('kAggMix').addEventListener('click', nuovoMix);
-    ['kPorta', 'kChiede', 'kPrese', 'kNote', 'kCarico', 'kSound'].forEach((id) => $(id).addEventListener('input', () => { leggiAltro(); cambio(); }));
+    ['kPorta', 'kChiede', 'kPrese', 'kNote', 'kOspitalita', 'kCarico', 'kSound'].forEach((id) => $(id).addEventListener('input', () => { leggiAltro(); cambio(); }));
     ['kCarico', 'kSound'].forEach((id) => $(id).addEventListener('change', () => { sk.contenuto = R.normalizzaScheda(sk.contenuto); riempiAltro(); }));
     const misura = () => {
       const p = sk.contenuto.palco;
@@ -737,6 +785,7 @@
     svg.addEventListener('pointermove', muovi);
     svg.addEventListener('pointerup', fine); svg.addEventListener('pointercancel', fine);
     $('kIcEtichetta').addEventListener('input', () => { const o = iconaCorrente(); if (o) { o.etichetta = $('kIcEtichetta').value.slice(0, 30); disegnaPalco($('kSvg'), sk.contenuto.palco, true); cambio(); } });
+    $('kIcScritta').addEventListener('change', () => { const o = iconaCorrente(); if (o) { o.scritta = $('kIcScritta').value === 'sotto' ? undefined : $('kIcScritta').value; disegnaPalcoEditor(); cambio(); } });
     $('kIcCanali').addEventListener('input', () => { const o = iconaCorrente(); if (o) { o.canali = $('kIcCanali').value.slice(0, 20); disegnaPalco($('kSvg'), sk.contenuto.palco, true); cambio(); } });
     $('kIcPrese').addEventListener('change', () => { const o = iconaCorrente(); if (o) { o.prese = Math.min(12, Math.max(1, Math.round(Number($('kIcPrese').value) || 1))); disegnaPalcoEditor(); cambio(); } });
     const ruota = (d) => { const o = iconaCorrente(); if (o) { o.rot = ((o.rot + d) % 360 + 360) % 360; disegnaPalcoEditor(); cambio(); } };
