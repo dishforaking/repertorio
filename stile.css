@@ -499,3 +499,15 @@ button.stretto { margin: 0; padding: 4px 10px; }
 .k-fams { display: flex; flex-wrap: wrap; gap: 1mm 4mm; font-size: 8pt; margin-top: 1mm; }
 .k-piede { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; font-size: 8.5pt; font-weight: 700; border-top: 1pt solid #000; padding-top: 1mm; }
 .k-sotto { margin: 12px 0 6px; }
+/* Variante zoom (17/11/2026) */
+.k-zoom { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+.k-zoom button { margin: 0; min-width: 44px; font-size: 20px; padding: 4px 10px; }
+.k-zoom #kZoomTutto { font-size: 15px; margin-left: auto; }
+#kZoomTesto { min-width: 32px; text-align: center; font-weight: 700; color: var(--oro); }
+.k-finestra { position: relative; }
+.k-pos { position: absolute; left: 6px; right: 6px; top: 6px; background: rgba(0,0,0,.78); color: #fff; font-size: 13px; font-weight: 600; padding: 3px 8px; border-radius: 6px; pointer-events: none; }
+.k-mappa { position: absolute; right: 6px; bottom: 6px; width: 30%; height: auto; border: 1px solid #000; background: #fff; pointer-events: none; }
+.k-frecce { display: grid; grid-template-columns: repeat(3, 56px); gap: 4px; justify-content: center; margin: 6px 0; }
+.k-frecce button { margin: 0; font-size: 22px; padding: 6px 0; }
+.k-check { display: flex; align-items: center; gap: 8px; }
+.k-check input[type=checkbox] { width: auto; margin: 0; flex: none; }

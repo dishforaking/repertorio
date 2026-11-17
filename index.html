@@ -386,7 +386,17 @@
             <label class="k-campo"><span class="etichetta">Larghezza (m)</span><input id="kLargh" inputmode="decimal" maxlength="4"></label>
             <label class="k-campo"><span class="etichetta">Profondità (m)</span><input id="kProf" inputmode="decimal" maxlength="4"></label>
           </div>
-          <svg id="kSvg" class="k-palco k-editor" xmlns="http://www.w3.org/2000/svg"></svg>
+          <div class="k-zoom">
+            <button type="button" id="kZoomMeno" class="secondario" aria-label="Rimpicciolisci">−</button>
+            <span id="kZoomTesto">1×</span>
+            <button type="button" id="kZoomPiu" class="secondario" aria-label="Ingrandisci">+</button>
+            <button type="button" id="kZoomTutto" class="secondario">Tutto</button>
+          </div>
+          <div class="k-finestra">
+            <svg id="kSvg" class="k-palco k-editor" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div id="kPos" class="k-pos" hidden></div>
+            <svg id="kMappa" class="k-mappa" xmlns="http://www.w3.org/2000/svg" hidden></svg>
+          </div>
           <div class="riquadro k-icona" id="kIcona" hidden>
             <b id="kIcNome"></b>
             <label class="k-campo"><span class="etichetta">Etichetta</span><input id="kIcEtichetta" maxlength="30" placeholder="GTR1 modeller"></label>
@@ -400,9 +410,10 @@
               <label class="k-check"><input type="checkbox" id="kPedLocale"> Pedana del locale</label>
             </div>
             <label class="k-check" id="kIcGruppoRiga" hidden><input type="checkbox" id="kIcGruppo"> Sposta tutta la batteria</label>
+            <div class="k-frecce"><span></span><button type="button" id="kFrSu" class="secondario" aria-label="Verso il fondo">↑</button><span></span><button type="button" id="kFrSx" class="secondario" aria-label="A sinistra">←</button><button type="button" id="kFrGiu" class="secondario" aria-label="Verso il pubblico">↓</button><button type="button" id="kFrDx" class="secondario" aria-label="A destra">→</button></div>
             <div class="riga-campi"><button type="button" id="kIcSx" class="secondario" aria-label="Ruota a sinistra">⟲ 45°</button><button type="button" id="kIcDx" class="secondario" aria-label="Ruota a destra">⟳ 45°</button><button type="button" id="kIcTogli" class="secondario">Togli</button></div>
           </div>
-          <p class="tenue piccolo">Tocca un oggetto per aggiungerlo al centro del palco, poi trascinalo col dito (si aggancia ogni 25 cm).</p>
+          <p class="tenue piccolo">Tocca un oggetto per aggiungerlo al centro del palco, poi trascinalo col dito (si aggancia ogni 25 cm, la batteria ogni 5 cm). Con + ingrandisci; col dito su una zona vuota sposti la vista. Pezzi uno sopra l'altro: tocca di nuovo lo stesso punto per scegliere quello sotto.</p>
           <div class="k-tavolozza" id="kTavolozza"></div>
           <h2 class="k-sotto">Batteria</h2>
           <div class="riga-campi"><button type="button" id="kBtnMettiSet">Metti il mio set</button><button type="button" id="kBtnSalvaSet" class="secondario" hidden>Salva come mio set</button></div>

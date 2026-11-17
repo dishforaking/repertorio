@@ -25,6 +25,9 @@
   let sk = null;            // copia di lavoro { tipo: 'setup'|'serata', id, proprietario, nome, contenuto, versione, rev, revData, revInviata, setupOrigine }
   let timer = null, inCorso = false, diNuovo = false, scheda = 'canali', canaleAperto = null, iconaScelta = null, ordinatoreCanali = null;
   let trascina = null;
+  // Variante zoom (17/11/2026): ingrandimento SOLO nell'editor, non si salva; centro della vista in metri
+  const ZOOM = [1, 2, 3, 4];
+  let zoom = 1, vista = null, ultimoTocco = null;
 
   const schedeTutte = () => { const r = risposta(); return (r && r.schede) || []; };
   const indice = () => { const r = risposta(); return (r && r.schedeIndice) || []; };
@@ -87,7 +90,7 @@
   function apriOggetto(k) {
     sk = copia(k);
     memoria.set('schedaAperta', { id: sk.id, tipo: sk.tipo, proprietario: sk.proprietario });
-    canaleAperto = null; iconaScelta = null;
+    canaleAperto = null; iconaScelta = null; zoom = 1; vista = null;
     riempi();
     vai('vScheda');
   }
@@ -384,7 +387,14 @@
   function disegnaPalco(svg, palco, editor) {
     svg.textContent = '';
     const W = palco.larghezza * 100, H = palco.profondita * 100, M = 34;
-    svg.setAttribute('viewBox', (-M) + ' ' + (-M) + ' ' + (W + 2 * M) + ' ' + (H + 2 * M));
+    if (editor && zoom > 1) {
+      // (non ovvio) stessa proporzione della vista intera: la finestra resta grande uguale sullo schermo, dentro si ingrandisce
+      const vw = (W + 2 * M) / zoom, vh = (H + 2 * M) / zoom;
+      const c = vista || { x: W / 200, y: H / 200 };
+      const x0 = Math.min(W + M - vw, Math.max(-M, c.x * 100 - vw / 2)), y0 = Math.min(H + M - vh, Math.max(-M, c.y * 100 - vh / 2));
+      vista = { x: (x0 + vw / 2) / 100, y: (y0 + vh / 2) / 100 };
+      svg.setAttribute('viewBox', x0 + ' ' + y0 + ' ' + vw + ' ' + vh);
+    } else svg.setAttribute('viewBox', (-M) + ' ' + (-M) + ' ' + (W + 2 * M) + ' ' + (H + 2 * M));
     const quad = s('g', { stroke: '#c8c8c8', 'stroke-width': 1 });
     for (let x = 50; x < W; x += 50) quad.append(s('line', { x1: x, x2: x, y1: 0, y2: H, 'stroke-width': x % 100 ? .6 : 1.2 }));
     for (let y = 50; y < H; y += 50) quad.append(s('line', { x1: 0, x2: W, y1: y, y2: y, 'stroke-width': y % 100 ? .6 : 1.2 }));
@@ -411,6 +421,9 @@
     const p = sk.contenuto.palco;
     $('kLargh').value = String(p.larghezza).replace('.', ','); $('kProf').value = String(p.profondita).replace('.', ',');
     disegnaPalco($('kSvg'), p, true);
+    disegnaMappa();
+    $('kZoomTesto').textContent = zoom + '×';
+    $('kZoomMeno').disabled = zoom === 1; $('kZoomTutto').disabled = zoom === 1; $('kZoomPiu').disabled = zoom === ZOOM[ZOOM.length - 1];
     const o = p.icone.find((x) => x.id === iconaScelta);
     $('kIcona').hidden = !o;
     if (o) {
@@ -429,40 +442,122 @@
     const q = pt.matrixTransform(svg.getScreenCTM().inverse());
     return { x: q.x / 100, y: q.y / 100 };
   }
+  /** Pezzi sotto il dito, dal più in alto al più in basso (per scegliere quello sotto con un secondo tocco). */
+  function pezziSotto(e) {
+    const ids = [];
+    document.elementsFromPoint(e.clientX, e.clientY).forEach((el2) => {
+      const g = el2.closest && el2.closest('#kSvg .k-icona');
+      if (g && ids.indexOf(g.dataset.id) < 0) ids.push(g.dataset.id);
+    });
+    return ids;
+  }
+  function scriviPosizione(o) {
+    const n = (v) => String(Math.round(v * 100) / 100).replace('.', ',');
+    $('kPos').textContent = o ? (o.etichetta || NOMI_ICONA[o.tipo]) + ' · ' + n(o.x) + ' m da sinistra · ' + n(o.y) + ' m dal fondo' : '';
+    $('kPos').hidden = !o;
+  }
   function iniziaTrascina(e) {
-    const g = e.target.closest && e.target.closest('.k-icona');
-    if (!g) { if (iconaScelta) { iconaScelta = null; disegnaPalcoEditor(); } return; }
-    iconaScelta = g.dataset.id;
+    const sotto = pezziSotto(e);
+    const giaScelto = iconaScelta && sotto.indexOf(iconaScelta) >= 0;
+    // (non ovvio) la pedana fa da "fondo": col dito sopra si sposta la vista come su una zona vuota; un tocco fermo la sceglie,
+    // e solo quando è scelta si trascina. Altrimenti a zoom alto, con la batteria sulla pedana, non si potrebbe scorrere.
+    const soloPedana = sotto.length === 1 && !giaScelto && (sk.contenuto.palco.icone.find((x) => x.id === sotto[0]) || {}).tipo === 'pedana';
+    if (!sotto.length || soloPedana) {
+      // zona vuota: con lo zoom il dito sposta la vista; un tocco senza movimento toglie la scelta (o sceglie la pedana)
+      const p0 = { x: e.clientX, y: e.clientY };
+      trascina = { vista: true, id: e.pointerId, p0, c0: vista ? { x: vista.x, y: vista.y } : null, mosso: false, pedana: soloPedana ? sotto[0] : null };
+      $('kSvg').setPointerCapture(e.pointerId); e.preventDefault();
+      return;
+    }
+    // (non ovvio) se il pezzo già scelto è sotto il dito si continua con quello: così si trascina anche se un altro gli sta sopra
+    iconaScelta = giaScelto ? iconaScelta : sotto[0];
     const o = sk.contenuto.palco.icone.find((x) => x.id === iconaScelta);
-    if (!puoModificare()) { disegnaPalcoEditor(); return; }
+    if (!puoModificare()) { trascina = { soloScelta: true, id: e.pointerId, sotto, giaScelto, p0: { x: e.clientX, y: e.clientY } }; disegnaPalcoEditor(); return; }
     const p = puntoSvg(e);
     const gruppo = $('kIcGruppo').checked && o.gruppo ? sk.contenuto.palco.icone.filter((x) => x.gruppo === o.gruppo) : [o];
-    trascina = { o, dx: o.x - p.x, dy: o.y - p.y, mosso: false, id: e.pointerId, gruppo, partenza: gruppo.map((x) => ({ x: x.x, y: x.y })), x0: o.x, y0: o.y };
+    trascina = { o, dx: o.x - p.x, dy: o.y - p.y, mosso: false, id: e.pointerId, gruppo, partenza: gruppo.map((x) => ({ x: x.x, y: x.y })), x0: o.x, y0: o.y, sotto, giaScelto, p0: { x: e.clientX, y: e.clientY } };
     $('kSvg').setPointerCapture(e.pointerId);
     e.preventDefault();
     disegnaPalcoEditor();
+    scriviPosizione(o);
   }
   function muovi(e) {
-    if (!trascina || e.pointerId !== trascina.id) return;
+    if (!trascina || e.pointerId !== trascina.id || trascina.soloScelta) return;
+    if (trascina.vista) {
+      if (zoom === 1 || !trascina.c0) return;
+      const svg = $('kSvg'), scala = svg.viewBox.baseVal.width / svg.getBoundingClientRect().width;   // cm per pixel
+      const dx = e.clientX - trascina.p0.x, dy = e.clientY - trascina.p0.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) trascina.mosso = true;
+      vista = { x: trascina.c0.x - dx * scala / 100, y: trascina.c0.y - dy * scala / 100 };
+      disegnaPalco(svg, sk.contenuto.palco, true); disegnaMappa();
+      return;
+    }
     const p = puntoSvg(e), pal = sk.contenuto.palco;
     const passo = trascina.o.gruppo ? R.AGGANCIO_FINE : R.AGGANCIO, tondo = (v) => Math.round(v * 100) / 100;
     const x = tondo(Math.min(pal.larghezza, Math.max(0, Math.round((p.x + trascina.dx) / passo) * passo)));
     const y = tondo(Math.min(pal.profondita, Math.max(0, Math.round((p.y + trascina.dy) / passo) * passo)));
     if (x !== trascina.o.x || y !== trascina.o.y) {
-      const ddx = x - trascina.x0, ddy = y - trascina.y0;   // spostamento di tutto il gruppo, uguale per ogni pezzo
-      trascina.gruppo.forEach((q, i) => {
-        q.x = tondo(Math.min(pal.larghezza, Math.max(0, trascina.partenza[i].x + ddx)));
-        q.y = tondo(Math.min(pal.profondita, Math.max(0, trascina.partenza[i].y + ddy)));
-        const g = $('kSvg').querySelector('.k-icona[data-id="' + q.id + '"]');
-        if (g) g.setAttribute('transform', 'translate(' + q.x * 100 + ' ' + q.y * 100 + ')');
-      });
+      sposta(trascina.gruppo, trascina.partenza, x - trascina.x0, y - trascina.y0);
       trascina.mosso = true;
+      scriviPosizione(trascina.o);
     }
+  }
+  /** Sposta un gruppo di pezzi della stessa quantità, ognuno tenuto dentro il palco. */
+  function sposta(gruppo, partenza, ddx, ddy) {
+    const pal = sk.contenuto.palco, tondo = (v) => Math.round(v * 100) / 100;
+    gruppo.forEach((q, i) => {
+      q.x = tondo(Math.min(pal.larghezza, Math.max(0, partenza[i].x + ddx)));
+      q.y = tondo(Math.min(pal.profondita, Math.max(0, partenza[i].y + ddy)));
+      const g = $('kSvg').querySelector('.k-icona[data-id="' + q.id + '"]');
+      if (g) g.setAttribute('transform', 'translate(' + q.x * 100 + ' ' + q.y * 100 + ')');
+    });
+    disegnaMappa();
   }
   function fine(e) {
     if (!trascina || e.pointerId !== trascina.id) return;
-    const mosso = trascina.mosso; trascina = null;
-    if (mosso) cambio();
+    const t = trascina; trascina = null;
+    if (t.vista) {
+      if (!t.mosso && t.pedana) { iconaScelta = t.pedana; scriviPosizione(iconaCorrente()); disegnaPalcoEditor(); }
+      else if (!t.mosso && iconaScelta) { iconaScelta = null; scriviPosizione(null); disegnaPalcoEditor(); }
+      return;
+    }
+    const fermo = !t.mosso && Math.abs(e.clientX - t.p0.x) + Math.abs(e.clientY - t.p0.y) < 10;
+    // secondo tocco fermo sullo stesso pezzo con altri sotto: si sceglie quello sotto (poi si ricomincia dall'alto)
+    if (fermo && t.giaScelto && t.sotto.length > 1) {
+      iconaScelta = t.sotto[(t.sotto.indexOf(iconaScelta) + 1) % t.sotto.length];
+      disegnaPalcoEditor(); scriviPosizione(iconaCorrente());
+      return;
+    }
+    if (t.mosso) cambio();
+  }
+  /** Frecce di precisione: un passo (5 cm batteria, 25 cm il resto); con "Sposta tutta la batteria" muovono tutto il gruppo. */
+  function freccia(dx, dy) {
+    const o = iconaCorrente(); if (!o || !puoModificare()) return;
+    const passo = o.gruppo ? R.AGGANCIO_FINE : R.AGGANCIO;
+    const gruppo = $('kIcGruppo').checked && o.gruppo ? sk.contenuto.palco.icone.filter((x) => x.gruppo === o.gruppo) : [o];
+    sposta(gruppo, gruppo.map((x) => ({ x: x.x, y: x.y })), dx * passo, dy * passo);
+    scriviPosizione(o); cambio();
+  }
+  function cambiaZoom(nuovo) {
+    nuovo = Math.min(ZOOM[ZOOM.length - 1], Math.max(1, nuovo));
+    const o = iconaCorrente();
+    if (nuovo > 1) vista = o ? { x: o.x, y: o.y } : (vista || { x: sk.contenuto.palco.larghezza / 2, y: sk.contenuto.palco.profondita / 2 });
+    else vista = null;
+    zoom = nuovo; disegnaPalcoEditor();
+  }
+  /** Riquadrino nell'angolo: tutto il palco, i pezzi come punti e il rettangolo della parte ingrandita. */
+  function disegnaMappa() {
+    const m = $('kMappa'); if (!m) return;
+    // (non ovvio) su un <svg> la proprietà .hidden non esiste: serve l'attributo
+    if (zoom === 1) { m.setAttribute('hidden', ''); return; }
+    m.removeAttribute('hidden');
+    m.textContent = '';
+    const pal = sk.contenuto.palco, W = pal.larghezza * 100, H = pal.profondita * 100;
+    m.setAttribute('viewBox', '-10 -10 ' + (W + 20) + ' ' + (H + 20));
+    m.append(s('rect', { x: 0, y: 0, width: W, height: H, fill: '#fff', stroke: '#000', 'stroke-width': W / 60 }));
+    pal.icone.forEach((o) => m.append(s('circle', { cx: o.x * 100, cy: o.y * 100, r: W / 70, fill: o.id === iconaScelta ? '#B62E27' : '#555' })));
+    const vb = $('kSvg').viewBox.baseVal;
+    m.append(s('rect', { x: vb.x, y: vb.y, width: vb.width, height: vb.height, fill: 'none', stroke: '#B62E27', 'stroke-width': W / 50 }));
   }
   function aggiungiIcona(tipo) {
     const p = sk.contenuto.palco;
@@ -645,6 +740,10 @@
     $('kIcCanali').addEventListener('input', () => { const o = iconaCorrente(); if (o) { o.canali = $('kIcCanali').value.slice(0, 20); disegnaPalco($('kSvg'), sk.contenuto.palco, true); cambio(); } });
     $('kIcPrese').addEventListener('change', () => { const o = iconaCorrente(); if (o) { o.prese = Math.min(12, Math.max(1, Math.round(Number($('kIcPrese').value) || 1))); disegnaPalcoEditor(); cambio(); } });
     const ruota = (d) => { const o = iconaCorrente(); if (o) { o.rot = ((o.rot + d) % 360 + 360) % 360; disegnaPalcoEditor(); cambio(); } };
+    $('kZoomPiu').addEventListener('click', () => cambiaZoom(zoom + 1));
+    $('kZoomMeno').addEventListener('click', () => cambiaZoom(zoom - 1));
+    $('kZoomTutto').addEventListener('click', () => cambiaZoom(1));
+    [['kFrSu', 0, -1], ['kFrGiu', 0, 1], ['kFrSx', -1, 0], ['kFrDx', 1, 0]].forEach(([id, dx, dy]) => $(id).addEventListener('click', () => freccia(dx, dy)));
     $('kIcSx').addEventListener('click', () => ruota(-45)); $('kIcDx').addEventListener('click', () => ruota(45));
     $('kIcTogli').addEventListener('click', () => { sk.contenuto.palco.icone = sk.contenuto.palco.icone.filter((x) => x.id !== iconaScelta); iconaScelta = null; disegnaPalcoEditor(); cambio(); });
     $('kBtnFoglio').addEventListener('click', apriFoglio);
