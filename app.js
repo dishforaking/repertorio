@@ -2,9 +2,9 @@
  * T6 Metronomo e schermo sempre acceso, T7 Serate, scaletta e stampa). */
 'use strict';
 
-const VERSIONE_INTERFACCIA = 8;   // T8-bis-2: rubrica dei locali e collegamento (motore v8)
+const VERSIONE_INTERFACCIA = 9;   // Variante T8-bis-2: locale dalla rubrica, setup e collegamento nella serata (motore v9)
 const _VI_T7 = 5;   // il motore rifiuta interfacce più vecchie della sua minima
-const MOTORE_MINIMO = 8;          // l'app non scrive su motori più vecchi di questo (T8-bis-2: rubrica dei locali)
+const MOTORE_MINIMO = 9;          // l'app non scrive su motori più vecchi di questo (variante T8-bis-2: localeId nella serata)
 const MOTORE = 'https://script.google.com/macros/s/AKfycbw2kaLgGlfxO5QIcmC1Ax9Ue8z7CBJNdcwpwr9oBsq_P2_MsS5YCIM-9tbfIhgWvWRIuw/exec';
 
 const $ = (id) => document.getElementById(id);
@@ -119,6 +119,7 @@ function aggiornaRete() {
   $('btnEliminaSerata').disabled = fuori;
   $('btnScegliOk').disabled = fuori || !scelti.length;
   if (window.Scheda) Scheda.aggiornaAbilitati();   // T8-bis-1: scheda tecnica solo ADMIN e con la rete
+  if (window.Scheda && serataAperta && !$('vSerata').hidden) Scheda.aggiornaSerata();   // variante T8-bis-2: tasti del setup senza rete
   if (window.Locali) { Locali.disegnaLista(); Locali.ridisegna(); }   // T8-bis-2: rubrica in sola lettura senza rete
   if (!fuori) { av.hidden = true; return; }
   const copia = stato.dati;
@@ -1430,7 +1431,24 @@ function rigaAvviso(av, conTitolo) {
   return li;
 }
 
+/** Variante T8-bis-2: serate da collegare (solo ADMIN). Calcolata ogni volta dai dati: sparisce da sola quando è a posto. */
+function disegnaDaCollegare() {
+  const box = $('riquadroDaCollegare'), ul = $('listaDaCollegare'); if (!box) return;
+  ul.textContent = '';
+  const r = risposta();
+  if (!stato.admin || !r) { box.hidden = true; return; }
+  const schede = (r.schede || []).concat((r.schedeIndice || []).filter((x) => !(r.schede || []).some((k) => k.id === x.id)));
+  const righe = Regole.serateDaCollegare(r.serate || [], schede, r.locali || [], oggiLocale());
+  righe.forEach((x) => {
+    const li = el('li'); const b = el('button', 'apri'); b.type = 'button'; b.dataset.id = x.id;
+    b.append(el('b', '', Regole.scriviData(x.data, true) + (x.locale ? ' · ' + x.locale : '')), el('span', 'cosa', x.problemi.join(' · ')));
+    b.addEventListener('click', () => apriSerata(x.id));
+    li.append(b); ul.append(li);
+  });
+  box.hidden = !righe.length;
+}
 function disegnaBacheca() {
+  disegnaDaCollegare();
   const ul = $('listaDaSistemare'); if (!ul) return;
   ul.textContent = '';
   const aperti = avvisiAperti();
@@ -1964,7 +1982,7 @@ const serateTutte = () => { const r = risposta(); return (r && r.serate) || []; 
 const scaletteTutte = () => { const r = risposta(); return (r && r.scalette) || []; };
 const righeDi = (serataId) => scaletteTutte().filter((x) => x.serata === serataId).sort((a, b) => a.ordine - b.ordine);
 function oggiLocale() { const d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-let serataAperta = null;       // copia di lavoro { id, versione, data, locale, orario, note } (versione 0 = non salvata)
+let serataAperta = null;       // copia di lavoro { id, versione, data, locale, localeId, orario, note } (versione 0 = non salvata)
 let scal = { serata: null, righe: [], conosciute: [], aperta: null };
 let timerSerata = null, serataInCorso = false, serataDiNuovo = false;
 let timerScaletta = null, scalettaInCorso = false, scalettaDiNuovo = false, ordinatoreScaletta = null;
@@ -2024,7 +2042,7 @@ function scalettaOccupata() {
 function apriSerata(id, daRidisegno) {
   const s = id ? serateTutte().find((x) => x.id === id) : null;
   if (id && !s) return vai('vSerate');
-  serataAperta = s ? Object.assign({}, s) : { id: nuovoIdBrano(), versione: 0, data: '', locale: '', orario: '', note: '' };
+  serataAperta = s ? Object.assign({ localeId: '' }, s) : { id: nuovoIdBrano(), versione: 0, data: '', locale: '', localeId: '', orario: '', note: '' };
   const lista = righeDi(serataAperta.id).map(copiaRiga);
   const aperta = scal.serata === serataAperta.id && lista.some((x) => x.id === scal.aperta) ? scal.aperta : null;
   scal = { serata: serataAperta.id, righe: lista, conosciute: lista.map((x) => ({ id: x.id, versione: x.versione })), aperta };
@@ -2041,16 +2059,84 @@ function riempiSerata() {
   const be = $('btnEliminaSerata'); delete be.dataset.conferma; be.textContent = 'Elimina serata'; be.className = 'pericolo';
   mostra('esitoSerata', ''); mostra('esitoScaletta', '');
   aggiornaInfoSerata();
+  $('sLocaliSugg').hidden = true; aggiornaLocaleSerata();
   disegnaScaletta();
-  if (window.Scheda) Scheda.aggiornaSerata();   // T8-bis-1: pulsante "Scheda tecnica"
+  if (window.Scheda) Scheda.aggiornaSerata();   // T8-bis-1: pulsante "Scheda tecnica"; variante: setup e collegamento
 }
 function aggiornaInfoSerata() {
   const s = serataAperta;
   $('sInfo').textContent = s.versione ? 'Ultima modifica ' + (s.modificatoDa || '') + ' il ' + dataOra(s.modificatoIl) : 'Serata nuova: si salva appena scrivi la data.';
 }
 function leggiModuloSerata() {
-  return { id: serataAperta.id, data: $('sData').value, locale: $('sLocale').value, orario: $('sOrario').value, note: $('sNote').value };
+  return { id: serataAperta.id, data: $('sData').value, locale: $('sLocale').value, localeId: serataAperta.localeId || '', orario: $('sOrario').value, note: $('sNote').value };
 }
+
+/* ---------- Variante T8-bis-2 · Locale della serata dalla rubrica (tutti) ----------
+ * Mentre si scrive compaiono i locali della rubrica; "+ Nuovo locale" lo crea con il nome scritto e apre la sua scheda,
+ * "◀" torna qui con il locale già collegato. Se il testo è uguale al nome di un locale (maiuscole e spazi non contano)
+ * si collega da solo, come fa installa con le serate vecchie. Se si cambia il testo, il collegamento si toglie. */
+const localiRubrica = () => (window.Locali ? Locali.tutti() : []);
+function localeDellaSerata() { return serataAperta && serataAperta.localeId ? localiRubrica().find((l) => l.id === serataAperta.localeId) || null : null; }
+function aggiornaLocaleSerata() {
+  if (!serataAperta) return;
+  const l = localeDellaSerata(), t = $('sLocale').value.trim(), p = $('sLocaleStato');
+  $('sLocaleApri').hidden = !l;
+  if (l) $('sLocaleTesto').textContent = '✓ Dalla rubrica' + [l.citta, Locali.nomeMixer(l.mixer)].filter(Boolean).map((x) => ' · ' + x).join('');
+  else if (serataAperta.localeId) $('sLocaleTesto').textContent = 'Il locale non è più nella rubrica.';
+  else $('sLocaleTesto').textContent = t ? 'Non è nella rubrica: sceglilo dall\'elenco o tocca "+ Nuovo locale".' : '';
+  p.hidden = !$('sLocaleTesto').textContent;
+}
+function disegnaSuggLocali() {
+  const ul = $('sLocaliSugg'); ul.textContent = '';
+  const t = $('sLocale').value, l0 = localeDellaSerata();
+  if (!io() || senzaRete() || document.activeElement !== $('sLocale') || (l0 && Regole.localePerNome(t, [l0]))) { ul.hidden = true; return; }
+  Regole.cercaLocali(t, localiRubrica()).forEach((l) => {
+    const li = el('li'); const b = el('button', '', l.nome); b.type = 'button';
+    if (l.citta) b.append(el('span', '', l.citta));
+    b.addEventListener('pointerdown', (e) => e.preventDefault());   // il campo non perde il fuoco prima del tocco
+    b.addEventListener('click', () => scegliLocaleSerata(l));
+    li.append(b); ul.append(li);
+  });
+  if (t.trim() && !Regole.localePerNome(t, localiRubrica())) {
+    const li = el('li'); const b = el('button', 'nuovo', '+ Nuovo locale "' + t.trim() + '"'); b.type = 'button';
+    b.addEventListener('pointerdown', (e) => e.preventDefault());
+    b.addEventListener('click', nuovoLocaleSerata);
+    li.append(b); ul.append(li);
+  }
+  ul.hidden = !ul.children.length;
+}
+function scegliLocaleSerata(l) {
+  serataAperta.localeId = l.id; $('sLocale').value = l.nome;
+  $('sLocaliSugg').hidden = true; $('sLocale').blur();
+  aggiornaLocaleSerata(); cambioSerata();
+}
+function salvaSerataSubito() { if (timerSerata) { clearTimeout(timerSerata); timerSerata = null; return salvaSerata(0); } return Promise.resolve(); }
+async function nuovoLocaleSerata() {
+  const nome = $('sLocale').value.trim();
+  if (!nome || !puoScrivere('esitoSerata')) return;
+  $('sLocaliSugg').hidden = true; $('sLocale').blur();
+  try {
+    const j = await chiama('salvaLocale', { locale: { id: nuovoIdBrano(), nome, contatti: [] } });
+    if (!j.ok) return mostra('esitoSerata', 'Locale non creato: ' + j.errore, true);
+    Locali.ricevi(j.locale);
+    serataAperta.localeId = j.locale.id; $('sLocale').value = j.locale.nome;
+    aggiornaLocaleSerata(); cambioSerata(); await salvaSerataSubito();
+    apriLocaleDallaSerata(j.locale.id, 'Locale aggiunto alla rubrica: scrivi mixer, misure e contatti. Con "◀" torni alla serata.');
+  } catch (e) { mostra('esitoSerata', 'Locale non creato: ' + e.message, true); }
+}
+function apriLocaleDallaSerata(id, testo) {
+  const sid = serataAperta.id;
+  Locali.apriDa(id, () => { if (serateTutte().some((s) => s.id === sid)) apriSerata(sid); else vai('vSerata'); }, testo);
+}
+$('sLocale').addEventListener('input', () => {
+  const l = localeDellaSerata();
+  if (serataAperta && serataAperta.localeId && !(l && Regole.localePerNome($('sLocale').value, [l]))) serataAperta.localeId = '';
+  if (serataAperta && !serataAperta.localeId) { const u = Regole.localePerNome($('sLocale').value, localiRubrica()); if (u) serataAperta.localeId = u.id; }
+  aggiornaLocaleSerata(); disegnaSuggLocali();
+});
+$('sLocale').addEventListener('focus', disegnaSuggLocali);
+$('sLocale').addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== $('sLocale')) $('sLocaliSugg').hidden = true; }, 200); });   // (non ovvio) il tocco su un suggerimento arriva dopo il blur
+$('sLocaleApri').addEventListener('click', async () => { if (localeDellaSerata()) { await salvaSerataSubito(); apriLocaleDallaSerata(serataAperta.localeId); } });
 const CAMPO_SERATA = { data: 'sData', orario: 'sOrario', locale: 'sLocale', note: 'sNote' };
 function cambioSerata() {
   clearTimeout(timerSerata); timerSerata = null;
@@ -2077,6 +2163,10 @@ async function salvaSerata(tentativo) {
   const id = dati.id, eraNuova = !serataSalvata();
   try {
     const j = await chiama('salvaSerata', { serata: dati, versione: serataAperta && serataAperta.id === id && serataAperta.versione ? serataAperta.versione : undefined });
+    if (!j.ok && j.errore === 'locale' && serataAperta && serataAperta.id === id) {   // il locale scelto è stato tolto dalla rubrica nel frattempo
+      serataAperta.localeId = ''; aggiornaLocaleSerata(); statoSalva('non salvato', 'errore');
+      mostra('esitoSerata', 'Il locale scelto non è più nella rubrica: sceglilo di nuovo o crealo con "+ Nuovo locale".', true); return;
+    }
     if (!j.ok) { statoSalva('non salvato', 'errore'); mostra('esitoSerata', 'Non salvata: ' + (j.campi ? j.campi.join(', ') : j.errore), true); return; }
     const r = risposta(); r.serate = r.serate || [];
     const i = r.serate.findIndex((x) => x.id === id);
@@ -2085,11 +2175,13 @@ async function salvaSerata(tentativo) {
     if (serataAperta && serataAperta.id === id) {
       Object.assign(serataAperta, j.serata);
       if (document.activeElement !== $('sOrario')) $('sOrario').value = j.serata.orario;
+      if (j.serata.localeId && document.activeElement !== $('sLocale')) $('sLocale').value = j.serata.locale;   // nome della rubrica
       $('riquadroEliminaSerata').hidden = !stato.admin;
-      aggiornaInfoSerata();
+      aggiornaInfoSerata(); aggiornaLocaleSerata();
+      if (window.Scheda) Scheda.aggiornaSerata();
       if (eraNuova) { disegnaScaletta(); if (scal.righe.length) cambioScaletta(); }   // copia di una serata: ora si salva anche la scaletta
     }
-    disegnaSerate();
+    disegnaSerate(); disegnaDaCollegare();
     statoSalva('salvato ✓', 'salvato');
     if (j.avviso) mostra('esitoSerata', 'Attenzione: ' + j.avviso.modificatoDa + ' aveva modificato questa serata il ' + dataOra(j.avviso.modificatoIl) + '. Hai salvato la tua versione: controllate insieme.', true);
   } catch (e) {
@@ -2392,7 +2484,7 @@ $('btnScegliOk').addEventListener('click', () => {
 $('btnDuplica').addEventListener('click', () => {
   if (!io() || !serataAperta || !puoScrivere('esitoSerata')) return;
   const righe = scal.righe.map((x) => Object.assign(copiaRiga(x), { id: nuovoIdBrano(), versione: 0 }));
-  serataAperta = { id: nuovoIdBrano(), versione: 0, data: '', locale: serataAperta.locale, orario: serataAperta.orario, note: serataAperta.note };
+  serataAperta = { id: nuovoIdBrano(), versione: 0, data: '', locale: serataAperta.locale, localeId: serataAperta.localeId || '', orario: serataAperta.orario, note: serataAperta.note };
   scal = { serata: serataAperta.id, righe, conosciute: [], aperta: null };
   riempiSerata();
   window.scrollTo(0, 0);

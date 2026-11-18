@@ -10,6 +10,7 @@
   const NOMI_RUOLO = { tecnico: 'Tecnico', gestore: 'Gestore', altro: 'Altro' };
   let lc = null;            // copia di lavoro del locale aperto (con versione, 0 = nuovo)
   let timer = null, inCorso = false, diNuovo = false;
+  let torna = null;         // variante T8-bis-2: aperto dalla serata, "◀" ci torna
 
   const tutti = () => { const r = risposta(); return ((r && r.locali) || []).slice().sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'it')); };
   const nomeMixer = (id) => { const m = R.MIXER_LOCALE.find((x) => x.id === id); return m ? m.nome : ''; };
@@ -37,7 +38,17 @@
     if (!l) return vai('vSerate');
     apriOggetto(JSON.parse(JSON.stringify(l)));
   }
+  /** Variante T8-bis-2: apre il locale dalla schermata della serata; "◀" richiama torna(). */
+  function apriDa(id, fn, testo) {
+    const l = tutti().find((x) => x.id === id);
+    if (!l) return;
+    apriOggetto(JSON.parse(JSON.stringify(l)));
+    torna = fn;
+    $('lIndietro').textContent = '◀ Serata';
+    if (testo) mostra('esitoL', testo);
+  }
   function apriOggetto(l) {
+    torna = null; $('lIndietro').textContent = '◀ Serate';
     lc = l;
     memoria.set('localeAperto', lc.id);
     riempi();
@@ -135,6 +146,7 @@
     salvaCopia();
     if (lc && lc.id === l.id) { lc.versione = l.versione; $('lElimina').hidden = !stato.admin; }
     disegnaLista();
+    if (typeof disegnaDaCollegare === 'function') disegnaDaCollegare();
   }
 
   /* ---------- Collegamenti ---------- */
@@ -146,7 +158,9 @@
     });
     $('lIndietro').addEventListener('click', () => {
       if (timer) { clearTimeout(timer); salva(); }
-      lc = null; memoria.del('localeAperto'); vai('vSerate');
+      const fn = torna; torna = null;
+      lc = null; memoria.del('localeAperto');
+      if (fn) fn(); else vai('vSerate');
     });
     ['lNome', 'lCitta', 'lDistanza', 'lPalcoL', 'lPalcoP', 'lImpiantoNote', 'lSpie', 'lCanali', 'lNote'].forEach((id) => $(id).addEventListener('input', () => { leggi(); cambio(); }));
     ['lMixer', 'lImpianto', 'lSubAux'].forEach((id) => $(id).addEventListener('change', () => { leggi(); cambio(); }));
@@ -182,7 +196,7 @@
   }
 
   collega();
-  window.Locali = { tutti, disegnaLista, ridisegna, riapri, occupata, ricevi, nomeMixer, _stato: () => lc };
+  window.Locali = { tutti, apriDa, disegnaLista, ridisegna, riapri, occupata, ricevi, nomeMixer, _stato: () => lc };
   disegnaLista();
   if (memoria.get('vista') === 'vLocale') disegna();
 })();

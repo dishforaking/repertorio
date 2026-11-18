@@ -19,7 +19,7 @@
  * T8-bis-1 (v10): scheda tecnica (famiglie, linee e coppie stereo, Click ultimo, monitor, stage plan, revisioni).
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 12;
+  var VERSIONE_REGOLE = 13;
   var TAPPA = 8;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
@@ -958,6 +958,7 @@ var Regole = (function () {
     v.data = leggiData(d.data) || '';
     if (!v.data) errori.push('data');           // la data serve: la serata si salva appena c'è
     v.locale = testo(d.locale, MAX_LOCALE);
+    v.localeId = idValido(d.localeId) ? d.localeId : '';   // v13: locale della rubrica (il nome resta in "locale")
     var o = leggiOrario(d.orario);
     if (o === null) errori.push('orario'); else v.orario = o;
     v.note = testo(d.note, MAX_NOTE_SERATA);
@@ -1670,6 +1671,58 @@ var Regole = (function () {
       return y;
     });
   }
+  /* ---------- v13 - Variante "Locale e setup nella serata" ---------- */
+  function chiaveNome(t) { return String(t === null || t === undefined ? '' : t).trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function perNome_(a, b) { return String(a.nome).localeCompare(String(b.nome), 'it', { sensitivity: 'base' }); }
+  /** Suggerimenti mentre si scrive il locale: prima chi inizia col testo, poi chi lo contiene (o ha la città che inizia così). Al massimo 6. */
+  function cercaLocali(t, locali) {
+    var q = chiaveNome(t), tutti = (locali || []).slice();
+    if (!q) return tutti.sort(perNome_).slice(0, 6);
+    var primi = [], altri = [];
+    tutti.forEach(function (l) {
+      var n = chiaveNome(l.nome), c = chiaveNome(l.citta);
+      if (n.indexOf(q) === 0) primi.push(l);
+      else if (n.indexOf(q) >= 0 || (c && c.indexOf(q) === 0)) altri.push(l);
+    });
+    return primi.sort(perNome_).concat(altri.sort(perNome_)).slice(0, 6);
+  }
+  /** Locale con lo stesso nome (maiuscole e spazi non contano): serve a collegare le serate vecchie. */
+  function localePerNome(nome, locali) {
+    var q = chiaveNome(nome);
+    if (!q) return null;
+    for (var i = 0; i < (locali || []).length; i++) if (chiaveNome(locali[i].nome) === q) return locali[i];
+    return null;
+  }
+  /** Scheda con i dati del locale copiati e, se non è già scelto, il collegamento consigliato dal mixer. */
+  function schedaConLocale(contenuto, locale) {
+    var c = normalizzaScheda(contenuto || {});
+    c.locale = normalizzaDatiLocale(locale || {});
+    if (!c.collegamento) c.collegamento = suggerisciModalita(c.locale).modalita || '';
+    return c;
+  }
+  var TESTI_DA_COLLEGARE = { localeManca: 'manca il locale', localeSparito: 'il locale non è più in rubrica', setup: 'manca il setup',
+    localeCambiato: 'il locale della serata è cambiato: aggiorna la scheda tecnica' };
+  /** Bacheca ADMIN: serate da oggi in poi con locale fuori rubrica, senza scheda tecnica o con il locale cambiato. */
+  function serateDaCollegare(serate, schede, locali, oggi) {
+    var perId = {}, schedaDi = {};
+    (locali || []).forEach(function (l) { perId[l.id] = l; });
+    (schede || []).forEach(function (k) { if (k && k.tipo === 'serata') schedaDi[k.proprietario] = k; });
+    var out = [];
+    (serate || []).forEach(function (s) {
+      if (!s || !s.data || s.data < oggi) return;
+      var codici = [], problemi = [];
+      var aggiungi = function (c, t) { codici.push(c); problemi.push(t || TESTI_DA_COLLEGARE[c]); };
+      if (s.localeId && !perId[s.localeId]) aggiungi('localeSparito');
+      else if (!s.localeId) { if (chiaveNome(s.locale)) aggiungi('localeFuori', 'locale non in rubrica ("' + s.locale + '")'); else aggiungi('localeManca'); }
+      var k = schedaDi[s.id];
+      if (!k) aggiungi('setup');
+      else if (k.contenuto && s.localeId && perId[s.localeId] && ((k.contenuto.locale || {}).id || '') !== s.localeId) aggiungi('localeCambiato');
+      if (codici.length) out.push({ id: s.id, data: s.data, locale: s.locale || '', codici: codici, problemi: problemi });
+    });
+    out.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : 0; });
+    return out;
+  }
+
   /** AES50: le uscite vanno in fila, quindi N = ultima linea prima del Click (le libere in mezzo contano). */
   function lineeAes50(canali) {
     var n = 0;
@@ -1872,6 +1925,7 @@ var Regole = (function () {
     fornitoModalita: fornitoModalita,
     righeFornito: righeFornito,
     applicaFornito: applicaFornito,
+    cercaLocali: cercaLocali, localePerNome: localePerNome, schedaConLocale: schedaConLocale, serateDaCollegare: serateDaCollegare,
     lineeAes50: lineeAes50,
     lineeDaSplittare: lineeDaSplittare,
     lineeTutte: lineeTutte,

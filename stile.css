@@ -542,3 +542,14 @@ button.stretto { margin: 0; padding: 4px 10px; }
 .k-gestiti { margin: 0 0 1mm; font-size: 9.5pt; font-weight: 700; }
 /* (non ovvio) con il riquadro Collegamento lo stage plan si abbassa, così pagina 1 resta una sola pagina */
 .k-foglio .k-coll ~ .k-palco { max-height: 118mm; }
+
+/* Variante T8-bis-2 (18/11/2026): locale dalla rubrica, setup e collegamento nella serata */
+ul.s-sugg { list-style: none; padding: 0; margin: 4px 0 8px; border: 1px solid var(--linea); border-radius: 8px; }
+ul.s-sugg li + li { border-top: 1px solid var(--linea); }
+ul.s-sugg button { width: 100%; margin: 0; text-align: left; background: transparent; border: 0; color: var(--testo); min-height: 44px; padding: 6px 10px; }
+ul.s-sugg button span { display: block; font-size: 13px; opacity: .75; }
+ul.s-sugg button.nuovo { font-weight: 600; }
+p.s-locale-stato { margin: 2px 0 10px; }
+p.s-locale-stato button.link { background: none; border: 0; padding: 0 4px; margin: 0; min-height: 0; text-decoration: underline; color: var(--testo); font-size: inherit; }
+.s-chip { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.s-chip button { margin: 0; }

@@ -31,6 +31,7 @@
   const ZOOM = [1, 2, 3, 4];
   let zoom = 1, vista = null, ultimoTocco = null;
   let testoToccato = false;   // T8-bis-2: il messaggio corretto a mano non si riscrive da solo (e non si salva)
+  let setupPerSerata = null;  // variante T8-bis-2: "+ Nuovo setup" dalla serata → tornando, la serata lo usa
 
   const schedeTutte = () => { const r = risposta(); return (r && r.schede) || []; };
   const indice = () => { const r = risposta(); return (r && r.schedeIndice) || []; };
@@ -66,6 +67,72 @@
     const salvata = serateTutte().some((s) => s.id === serataAperta.id);
     b.hidden = !salvata || (!k && !inIndice && !stato.admin);
     b.textContent = k || inIndice ? 'Scheda tecnica · Rev. ' + ((k || inIndice).rev || 1) + ((k || inIndice).revInviata ? ' inviata' : '') : '+ Scheda tecnica';
+    disegnaTecnicaSerata(k, inIndice, salvata);
+  }
+
+  /* ---------- Variante T8-bis-2 · Setup e collegamento nella serata (sceglie solo l'ADMIN, gli altri vedono) ---------- */
+  const nomeCollegamento = (id) => { const x = R.COLLEGAMENTI.find((c) => c.id === id); return x ? x.nome : 'Nessuna'; };
+  function disegnaTecnicaSerata(k, inIndice, salvata) {
+    const box = $('riquadroTecnica'); if (!box) return;
+    box.hidden = !salvata || (!k && !inIndice && !stato.admin);
+    if (box.hidden) return;
+    const no = senzaRete(), scelte = $('sSetupScelte'), dove = k || inIndice;
+    scelte.textContent = '';
+    if (dove) {
+      const origine = k && k.setupOrigine ? (setupTutti().find((x) => x.id === k.setupOrigine) || { nome: k.nome }).nome : '';
+      $('sSetupStato').textContent = (k && !k.setupOrigine ? 'Scheda compilata a mano' : 'Setup: ' + (origine || (k && k.nome) || '—'))
+        + (k ? ' · Collegamento: ' + nomeCollegamento(k.contenuto.collegamento) : '') + (stato.admin ? '. Per ripartire da un altro setup apri la scheda tecnica.' : '');
+    } else {
+      $('sSetupStato').textContent = 'Scegli il setup: la scheda tecnica prende i dati del locale e il collegamento consigliato dal suo mixer.';
+      setupTutti().forEach((x) => {
+        const b = el('button', 'secondario', x.nome); b.type = 'button'; b.dataset.setup = x.id; b.disabled = no;
+        b.addEventListener('click', () => usaSetup(x.id));
+        scelte.append(b);
+      });
+      const n = el('button', 'secondario', '+ Nuovo setup'); n.type = 'button'; n.id = 'sSetupNuovo'; n.disabled = no;
+      n.addEventListener('click', nuovoSetupPerSerata);
+      const v = el('button', 'secondario', 'Vuota, la compilo a mano'); v.type = 'button'; v.id = 'sSetupVuota'; v.disabled = no;
+      v.addEventListener('click', schedaVuotaSerata);
+      scelte.append(n, v);
+    }
+    scelte.hidden = !!dove || !stato.admin;
+    const riga = $('sCollRiga');
+    riga.hidden = !(k && stato.admin);
+    if (!riga.hidden) {
+      const sel = $('sCollegamento'); sel.textContent = '';
+      [{ id: '', nome: 'Nessuna (si propone la prima domanda)' }].concat(R.COLLEGAMENTI).forEach((x) => { const o = el('option', '', x.nome); o.value = x.id; sel.append(o); });
+      sel.value = k.contenuto.collegamento; sel.disabled = no;
+      const sug = R.suggerisciModalita(k.contenuto.locale || {});
+      $('sCollNota').textContent = !k.contenuto.locale ? 'La scheda non ha ancora il locale: scegli il locale della serata.'
+        : sug.modalita ? (sug.modalita === k.contenuto.collegamento ? 'Consigliato dal mixer del locale.' : 'Consigliato dal mixer del locale: ' + nomeCollegamento(sug.modalita) + '.')
+        : 'Mixer del locale non noto: la scheda propone il messaggio "che mixer avete?".';
+    }
+  }
+  async function dopoScheda(j, testo) {
+    if (!j) return;
+    ricevi(j.scheda);
+    aggiornaSerata();
+    mostra('esitoTecnica', testo);
+  }
+  async function usaSetup(setupId) {
+    const j = await azione('copiaSetup', { serata: serataAperta.id, setup: setupId }, 'esitoTecnica');
+    dopoScheda(j, j ? 'Scheda tecnica creata dal setup ' + j.scheda.nome + (j.scheda.contenuto.locale ? ', con il locale ' + j.scheda.contenuto.locale.nome : '') + '.' : '');
+  }
+  async function schedaVuotaSerata() {
+    const j = await azione('schedaVuota', { serata: serataAperta.id }, 'esitoTecnica');
+    if (!j) return;
+    await dopoScheda(j, '');
+    apriOggetto(j.scheda);
+    mostra('esitoK', 'Scheda vuota solo per questa serata: aggiungi canali, mix e palco.');
+  }
+  function nuovoSetupPerSerata() {
+    if (!puoScrivere('esitoTecnica')) return;
+    const sid = serataAperta.id;
+    apriOggetto({ tipo: 'setup', id: nuovoIdBrano(), nome: '', contenuto: R.normalizzaScheda({}), versione: 0 });
+    setupPerSerata = sid;
+    $('kIndietro').textContent = '◀ Serata';
+    mostra('esitoK', 'Setup nuovo: dagli un nome. Tornando alla serata con "◀", la serata lo usa; il setup resta per le prossime.');
+    $('kNome').focus();
   }
   async function apriDellaSerata() {
     const id = serataAperta.id, k = schedaDellaSerata(id);
@@ -91,6 +158,7 @@
     apriOggetto(k);
   }
   function apriOggetto(k) {
+    setupPerSerata = null;
     sk = copia(k);
     memoria.set('schedaAperta', { id: sk.id, tipo: sk.tipo, proprietario: sk.proprietario });
     canaleAperto = null; iconaScelta = null; zoom = 1; vista = null;
@@ -107,7 +175,7 @@
   }
   function riempi() {
     $('kTitolo').textContent = titolo();
-    $('kIndietro').textContent = sk.tipo === 'setup' ? '◀ Serate' : '◀ Serata';
+    $('kIndietro').textContent = sk.tipo === 'setup' && !setupPerSerata ? '◀ Serate' : '◀ Serata';
     const vuota = sk.tipo === 'serata' && !sk.versione;
     $('kCopia').hidden = !(sk.tipo === 'serata' && stato.admin);
     $('kCopiaTesto').textContent = vuota ? 'Questa serata non ha ancora una scheda: scegli il setup da cui partire.' : 'Riparti da un setup (la scheda torna l\'ideale; dopo un invio diventa una nuova revisione).';
@@ -209,6 +277,7 @@
       $('kBtnDuplica').hidden = !(stato.admin && sk.tipo === 'setup');
     }
     disegnaSetup();
+    if (typeof disegnaDaCollegare === 'function') disegnaDaCollegare();   // variante: la bacheca dell'ADMIN si aggiorna subito
   }
   async function azione(nome, dati, esito) {
     if (!puoScrivere(esito)) return null;
@@ -643,7 +712,10 @@
   const scriviNum = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
   function localeDellaRubrica() { const l = sk.contenuto.locale; return l && l.id ? locali().find((x) => x.id === l.id) || null : null; }
   /** D7: il locale proposto è quello con lo stesso nome scritto nella serata (campo libero della T7). */
+  /** Variante T8-bis-2: il locale della rubrica collegato alla serata (localeId). */
+  function localeDellaSerata() { const s1 = serataDi(sk); return s1 && s1.localeId ? locali().find((x) => x.id === s1.localeId) || null : null; }
   function localeProposto() {
+    const ls = localeDellaSerata(); if (ls) return ls;
     const s1 = serataDi(sk); if (!s1 || !s1.locale) return null;
     const n = String(s1.locale).trim().toLowerCase();
     return locali().find((x) => String(x.nome).trim().toLowerCase() === n) || null;
@@ -659,6 +731,9 @@
     $('kLocProposta').textContent = dl ? 'Dati del locale copiati per questa serata' + (dl.id && !localeDellaRubrica() ? ' (il locale non è più nella rubrica)' : '') + ': se li cambi qui, "Aggiorna il locale" li riporta nella rubrica.'
       : prop ? 'Proposto: ' + prop.nome + ', stesso nome scritto nella serata.' : '';
     $('kLocDati').hidden = !dl;
+    const ls = localeDellaSerata(), cambiato = !!(ls && (!dl || dl.id !== ls.id));
+    $('kLocSerata').hidden = !cambiato;   // variante: il locale della serata è cambiato dopo la scheda
+    if (cambiato) { $('kLocSerataTesto').textContent = 'Il locale della serata ora è ' + ls.nome + '.'; $('kLocUsaSerata').hidden = !stato.admin; }
     $('kLocNuovo').hidden = !!localeDellaRubrica();   // D7: solo se il locale della serata non è già in rubrica
     if (dl) {
       const mx = $('kLocMixer'); mx.textContent = '';
@@ -919,10 +994,29 @@
       if (j) { ricevi(j.scheda); $('boxReferente').hidden = true; mostra('esitoSerate', 'Referente salvato.'); }
     });
     $('btnSchedaTecnica').addEventListener('click', apriDellaSerata);
-    $('kIndietro').addEventListener('click', () => {
-      if (timer) { clearTimeout(timer); salva(); }
-      const k = sk; sk = null; memoria.del('schedaAperta');
+    $('kIndietro').addEventListener('click', async () => {
+      if (timer) { clearTimeout(timer); timer = null; await salva(); }
+      const k = sk, perSerata = setupPerSerata; sk = null; setupPerSerata = null; memoria.del('schedaAperta');
+      if (perSerata && k && k.tipo === 'setup' && serateTutte().some((x) => x.id === perSerata)) {
+        apriSerata(perSerata);
+        if (!k.versione) return mostra('esitoTecnica', 'Il setup non è stato salvato (serve il nome): scegline uno.', true);
+        if (!schedaDellaSerata(perSerata)) return usaSetup(k.id);
+        return;
+      }
       if (k && k.tipo === 'serata' && serateTutte().some((x) => x.id === k.proprietario)) apriSerata(k.proprietario); else vai('vSerate');
+    });
+    $('sCollegamento').addEventListener('change', async () => {
+      const k = schedaDellaSerata(serataAperta.id); if (!k) return;
+      const contenuto = copia(k.contenuto); contenuto.collegamento = $('sCollegamento').value;
+      const j = await azione('salvaScheda', { scheda: { tipo: 'serata', proprietario: k.proprietario, contenuto }, versione: k.versione }, 'esitoTecnica');
+      dopoScheda(j, j ? 'Collegamento: ' + nomeCollegamento(contenuto.collegamento) + '.' : '');
+    });
+    $('kLocUsaSerata').addEventListener('click', () => {
+      const l = localeDellaSerata(); if (!l) return;
+      sk.contenuto.collegamento = '';   // locale nuovo: si riparte dal collegamento consigliato dal suo mixer
+      sk.contenuto = R.schedaConLocale(sk.contenuto, l);
+      disegnaCollegamento(); cambio(); if (!$('kInvia').hidden) disegnaInvia();
+      mostra('esitoK', 'Locale della serata copiato: ' + l.nome + ', collegamento ' + nomeCollegamento(sk.contenuto.collegamento) + '.');
     });
     document.querySelectorAll('#kSchede button').forEach((b) => b.addEventListener('click', () => mostraScheda(b.dataset.k)));
     $('kNome').addEventListener('input', () => { sk.nome = $('kNome').value; $('kTitolo').textContent = titolo(); cambio(); });

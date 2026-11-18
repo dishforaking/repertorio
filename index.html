@@ -36,6 +36,10 @@
       <span class="tenue piccolo" id="prossimaScaletta"></span>
     </button>
     <button type="button" id="btnPalcoProssima" class="palco-entra" hidden>▶ Palco della prossima serata</button>
+    <div class="riquadro" id="riquadroDaCollegare" hidden>
+      <h2>Serate da collegare</h2>
+      <ul class="bacheca" id="listaDaCollegare"></ul>
+    </div>
     <div class="riquadro" id="riquadroDaSistemare">
       <h2>Da sistemare</h2>
       <ul class="bacheca" id="listaDaSistemare"></ul>
@@ -339,12 +343,25 @@
             </div>
           </div>
           <label class="etichetta" for="sLocale">Locale</label>
-          <input id="sLocale" class="grande" maxlength="80" placeholder="Nome del locale">
+          <input id="sLocale" class="grande" maxlength="80" placeholder="Scrivi o scegli dalla rubrica">
+          <ul class="s-sugg" id="sLocaliSugg" hidden></ul>
+          <p class="s-locale-stato piccolo" id="sLocaleStato" hidden><span id="sLocaleTesto"></span> <button type="button" id="sLocaleApri" class="link" hidden>Apri il locale</button></p>
           <label class="etichetta" for="sNote">Note della serata</label>
           <textarea id="sNote" rows="2" maxlength="500" placeholder="Orario del soundcheck, chi porta cosa…"></textarea>
         </div>
       </fieldset>
     </form>
+    <div class="riquadro" id="riquadroTecnica" hidden>
+      <h2>Setup e collegamento</h2>
+      <p class="piccolo" id="sSetupStato"></p>
+      <div class="s-chip" id="sSetupScelte" hidden></div>
+      <div id="sCollRiga" hidden>
+        <label class="etichetta" for="sCollegamento">Collegamento</label>
+        <select id="sCollegamento"></select>
+        <p class="tenue piccolo" id="sCollNota"></p>
+      </div>
+      <div class="esito" id="esitoTecnica" hidden></div>
+    </div>
     <div class="riquadro" id="riquadroScaletta">
       <div class="testa-struttura"><h2>Scaletta</h2><span id="scTotale"></span></div>
       <p class="tenue piccolo" id="scMancanti" hidden></p>
@@ -421,6 +438,7 @@
           <h2>Locale</h2>
           <div class="riga-campi"><select id="kLocScelta"></select><button type="button" id="kLocCopia" class="secondario">Usa</button></div>
           <p class="tenue piccolo" id="kLocProposta"></p>
+          <p class="k-controllo" id="kLocSerata" hidden><span id="kLocSerataTesto"></span> <button type="button" id="kLocUsaSerata" class="secondario">Usa il locale della serata</button></p>
           <button type="button" id="kLocNuovo" class="secondario" hidden>Salva come nuovo locale</button>
           <div id="kLocDati" hidden>
             <label class="etichetta" for="kLocMixer">Mixer di sala</label><select id="kLocMixer"></select>
