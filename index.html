@@ -270,6 +270,56 @@
         <label class="etichetta" for="refTel">Telefono</label><input id="refTel" maxlength="20" inputmode="tel" placeholder="+39 …">
         <button type="button" id="btnRefSalva">Salva referente</button>
       </div>
+      <div class="testa-struttura l-testa"><h2>Locali</h2><span class="tenue piccolo">rubrica con i contatti, la scrivono tutti</span></div>
+      <ul class="serate" id="listaLocali"></ul>
+      <p class="tenue piccolo" id="localiVuoti">Ancora nessun locale.</p>
+      <button type="button" id="btnNuovoLocale">+ Nuovo locale</button>
+    </div>
+  </section>
+
+  <section id="vLocale" class="vista" hidden>
+    <button type="button" id="lIndietro" class="secondario indietro">◀ Serate</button>
+    <h1 class="gotico k-h1" id="lTitolo">Locale</h1>
+    <p class="tenue piccolo" id="lSenzaRete" hidden>Senza rete la rubrica si legge ma non si modifica.</p>
+    <form id="moduloLocale" onsubmit="return false" autocomplete="off">
+      <fieldset id="lCampi">
+        <div class="riquadro">
+          <label class="etichetta" for="lNome">Nome del locale</label><input id="lNome" class="grande" maxlength="40" placeholder="Bar Test">
+          <label class="etichetta" for="lCitta">Città</label><input id="lCitta" maxlength="40" placeholder="Faenza">
+        </div>
+        <div class="riquadro">
+          <h2>Contatti</h2>
+          <ul class="l-contatti" id="lContatti"></ul>
+          <button type="button" id="lAggContatto" class="secondario">+ Contatto</button>
+        </div>
+        <div class="riquadro">
+          <h2>Dati tecnici</h2>
+          <label class="etichetta" for="lMixer">Mixer di sala</label><select id="lMixer"></select>
+          <p class="tenue piccolo" id="lSuggerimento"></p>
+          <div class="riga-campi">
+            <label class="k-campo"><span class="etichetta">Distanza palco–regia (m)</span><input id="lDistanza" inputmode="decimal" maxlength="5"></label>
+            <label class="k-campo"><span class="etichetta">Palco largo (m)</span><input id="lPalcoL" inputmode="decimal" maxlength="4"></label>
+            <label class="k-campo"><span class="etichetta">Palco profondo (m)</span><input id="lPalcoP" inputmode="decimal" maxlength="4"></label>
+          </div>
+          <label class="etichetta" for="lImpianto">Impianto del locale (casse e sub)</label><select id="lImpianto"><option value="">—</option><option value="si">Sì</option><option value="no">No</option><option value="nonSo">Non so</option></select>
+          <label class="etichetta" for="lImpiantoNote">Com'è l'impianto</label><textarea id="lImpiantoNote" rows="2" maxlength="200" placeholder="2 RCF 712 + 1 sub 18'', ingresso XLR sul mixer di sala"></textarea>
+          <p class="tenue piccolo">Per entrare nei canali del loro mixer (1A):</p>
+          <div class="riga-campi">
+            <label class="k-campo"><span class="etichetta">Sub su un aux</span><select id="lSubAux"><option value="">—</option><option value="si">Sì</option><option value="no">No</option><option value="nonSo">Non so</option></select></label>
+            <label class="k-campo"><span class="etichetta">Spie cablate al mixer</span><input id="lSpie" inputmode="numeric" maxlength="2"></label>
+            <label class="k-campo"><span class="etichetta">Canali liberi</span><input id="lCanali" inputmode="numeric" maxlength="2"></label>
+          </div>
+        </div>
+        <div class="riquadro">
+          <label class="etichetta" for="lNote">Note (prese, accesso, parcheggio; righe con "-" in elenco)</label><textarea id="lNote" rows="3" maxlength="600"></textarea>
+        </div>
+      </fieldset>
+    </form>
+    <div class="esito" id="esitoL" hidden></div>
+    <div class="riquadro" id="lElimina" hidden>
+      <h2>Amministrazione</h2>
+      <p class="tenue">Eliminare il locale non tocca le serate che lo hanno già usato.</p>
+      <button type="button" id="lBtnElimina" class="pericolo" data-testo="Elimina locale">Elimina locale</button>
     </div>
   </section>
 
@@ -364,8 +414,37 @@
     </div>
     <div id="kCorpo">
       <nav class="k-schede" id="kSchede">
-        <button type="button" data-k="canali">Canali</button><button type="button" data-k="monitor">Monitor</button><button type="button" data-k="palco">Palco</button><button type="button" data-k="altro">Altro</button>
+        <button type="button" data-k="collegamento" id="kTabColl">Collegamento</button><button type="button" data-k="canali">Canali</button><button type="button" data-k="monitor">Monitor</button><button type="button" data-k="palco">Palco</button><button type="button" data-k="altro">Altro</button>
       </nav>
+      <div class="k-pannello riquadro" data-k="collegamento" hidden>
+        <fieldset id="kCampiColl">
+          <h2>Locale</h2>
+          <div class="riga-campi"><select id="kLocScelta"></select><button type="button" id="kLocCopia" class="secondario">Usa</button></div>
+          <p class="tenue piccolo" id="kLocProposta"></p>
+          <button type="button" id="kLocNuovo" class="secondario" hidden>Salva come nuovo locale</button>
+          <div id="kLocDati" hidden>
+            <label class="etichetta" for="kLocMixer">Mixer di sala</label><select id="kLocMixer"></select>
+            <div class="riga-campi">
+              <label class="k-campo"><span class="etichetta">Distanza palco–regia (m)</span><input id="kLocDistanza" inputmode="decimal" maxlength="5"></label>
+              <label class="k-campo"><span class="etichetta">Palco largo (m)</span><input id="kLocPalcoL" inputmode="decimal" maxlength="4"></label>
+              <label class="k-campo"><span class="etichetta">Palco profondo (m)</span><input id="kLocPalcoP" inputmode="decimal" maxlength="4"></label>
+            </div>
+            <div class="riga-campi">
+              <label class="k-campo"><span class="etichetta">Impianto</span><select id="kLocImpianto"><option value="">—</option><option value="si">Sì</option><option value="no">No</option><option value="nonSo">Non so</option></select></label>
+              <label class="k-campo"><span class="etichetta">Sub su un aux</span><select id="kLocSubAux"><option value="">—</option><option value="si">Sì</option><option value="no">No</option><option value="nonSo">Non so</option></select></label>
+              <label class="k-campo"><span class="etichetta">Spie cablate</span><input id="kLocSpie" inputmode="numeric" maxlength="2"></label>
+              <label class="k-campo"><span class="etichetta">Canali liberi</span><input id="kLocCanali" inputmode="numeric" maxlength="2"></label>
+            </div>
+            <label class="etichetta" for="kLocImpiantoNote">Com'è l'impianto</label><textarea id="kLocImpiantoNote" rows="2" maxlength="200"></textarea>
+            <div class="riga-campi"><button type="button" id="kLocAggiorna" class="secondario">Aggiorna il locale</button><button type="button" id="kLocMisure" class="secondario" hidden></button></div>
+          </div>
+          <h2>Collegamento</h2>
+          <select id="kModalita"></select>
+          <p class="tenue piccolo" id="kSuggerimento"></p>
+          <div class="riquadro k-fornito" id="kFornito" hidden><span id="kFornitoTesto"></span><button type="button" id="kFornitoApplica" class="secondario"></button></div>
+        </fieldset>
+        <ul class="k-controlli" id="kControlli"></ul>
+      </div>
       <div class="k-pannello riquadro" data-k="canali">
         <div class="testa-struttura"><h2>Channel list</h2><span id="kTotLinee"></span></div>
         <fieldset id="kCampi">
@@ -435,9 +514,20 @@
         </fieldset>
       </div>
     </div>
+    <div class="riquadro" id="kInvia" hidden>
+      <h2>Invia al locale</h2>
+      <p class="tenue piccolo">1) Salva il PDF dal foglio. 2) Scrivi al contatto e allega il PDF con la graffetta di WhatsApp.</p>
+      <button type="button" id="kInviaPdf" class="secondario">1 · Foglio e PDF</button>
+      <label class="etichetta" for="kInviaContatto">A chi</label><select id="kInviaContatto"></select>
+      <label class="etichetta" for="kInviaTipo">Messaggio</label><select id="kInviaTipo"><option value="">Secondo la modalità</option><option value="primaDomanda">Prima domanda: che mixer avete?</option></select>
+      <textarea id="kInviaTesto" rows="8" maxlength="2000"></textarea>
+      <button type="button" id="kInviaScrivi">2 · Scrivi su WhatsApp</button>
+      <p class="tenue piccolo" id="kInviaNota"></p>
+    </div>
     <div class="riquadro">
       <button type="button" id="kBtnFoglio">Foglio e stampa</button>
       <button type="button" id="kBtnDuplica" class="secondario" hidden>Duplica setup</button>
+      <button type="button" id="kBtnEsporta" class="secondario" hidden>Esporta per Scheda Gig</button>
     </div>
     <div class="esito" id="esitoK" hidden></div>
     <div class="riquadro" id="kElimina" hidden>
@@ -550,5 +640,6 @@
 <script src="metronomo.js"></script>
 <script src="app.js"></script>
 <script src="scheda.js"></script>
+<script src="locali.js"></script>
 </body>
 </html>

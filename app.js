@@ -2,9 +2,9 @@
  * T6 Metronomo e schermo sempre acceso, T7 Serate, scaletta e stampa). */
 'use strict';
 
-const VERSIONE_INTERFACCIA = 7;   // T8-bis-1: scheda tecnica (motore v7)
+const VERSIONE_INTERFACCIA = 8;   // T8-bis-2: rubrica dei locali e collegamento (motore v8)
 const _VI_T7 = 5;   // il motore rifiuta interfacce più vecchie della sua minima
-const MOTORE_MINIMO = 7;          // l'app non scrive su motori più vecchi di questo (T8-bis-1: scheda tecnica)
+const MOTORE_MINIMO = 8;          // l'app non scrive su motori più vecchi di questo (T8-bis-2: rubrica dei locali)
 const MOTORE = 'https://script.google.com/macros/s/AKfycbw2kaLgGlfxO5QIcmC1Ax9Ue8z7CBJNdcwpwr9oBsq_P2_MsS5YCIM-9tbfIhgWvWRIuw/exec';
 
 const $ = (id) => document.getElementById(id);
@@ -119,6 +119,7 @@ function aggiornaRete() {
   $('btnEliminaSerata').disabled = fuori;
   $('btnScegliOk').disabled = fuori || !scelti.length;
   if (window.Scheda) Scheda.aggiornaAbilitati();   // T8-bis-1: scheda tecnica solo ADMIN e con la rete
+  if (window.Locali) { Locali.disegnaLista(); Locali.ridisegna(); }   // T8-bis-2: rubrica in sola lettura senza rete
   if (!fuori) { av.hidden = true; return; }
   const copia = stato.dati;
   av.textContent = (navigator.onLine ? 'Senza rete (motore non raggiungibile)' : 'Senza rete') + ' — dati del ' + (copia ? ora(copia.quando) : '(nessuna copia)') + '. Si può consultare, non modificare.';
@@ -192,11 +193,13 @@ function disegna() {
   disegnaBacheca();
   disegnaSerate();
   if (window.Scheda) Scheda.ridisegna();   // T8-bis-1
+  if (window.Locali) Locali.ridisegna();   // T8-bis-2
   if (!conosciuto) return vai('vNessuno');
   // T5: mentre si inserisce un testo o si legge, i dati nuovi non portano via dalla schermata (T7: idem scelta brani e anteprima)
   if (!$('vTesto').hidden || !$('vLettura').hidden || !$('vScegli').hidden || !$('vStampa').hidden) { aggiornaRete(); return; }
   if (!$('vPalco').hidden && palco) { aggiornaRete(); return; }   // T8: sul palco i dati nuovi non spostano niente
   if (!$('vScheda').hidden || !$('vSchedaStampa').hidden) { aggiornaRete(); return; }   // T8-bis-1: la scheda si aggiorna da sola (Scheda.ridisegna)
+  if (!$('vLocale').hidden) { aggiornaRete(); return; }   // T8-bis-2: idem il locale (Locali.ridisegna)
   let corrente = memoria.get('vista') || 'vInizio';
   if (corrente === 'vPalco') corrente = memoria.get('palcoDa') === 'brano' ? 'vBrano' : memoria.get('palcoDa') === 'serata' ? 'vSerata' : 'vInizio';
   if (corrente === 'vTesto' || corrente === 'vLettura') corrente = 'vBrano';
@@ -208,6 +211,11 @@ function disegna() {
   if (corrente === 'vScheda' || corrente === 'vSchedaStampa') {
     if (!window.Scheda) return;   // scheda.js si carica dopo app.js e richiama disegna()
     if (Scheda.riapri()) return;
+    corrente = 'vSerate';
+  }
+  if (corrente === 'vLocale') {
+    if (!window.Locali) return;   // locali.js si carica dopo e richiama disegna()
+    if (Locali.riapri()) return;
     corrente = 'vSerate';
   }
   if (corrente === 'vSerata') {
@@ -233,7 +241,7 @@ function vai(vista) {
   if (vista === 'vMetronomo') preparaSolo();
   if (vista !== 'vMetronomo') tocchiSolo = [];
   document.querySelectorAll('.vista').forEach((v) => { v.hidden = v.id !== vista; });
-  const voce = ['vBrano', 'vTesto', 'vLettura'].includes(vista) ? 'vRepertorio' : ['vSerata', 'vScegli', 'vStampa', 'vScheda', 'vSchedaStampa'].includes(vista) ? 'vSerate' : vista === 'vPalco' ? '' : vista;
+  const voce = ['vBrano', 'vTesto', 'vLettura'].includes(vista) ? 'vRepertorio' : ['vSerata', 'vScegli', 'vStampa', 'vScheda', 'vSchedaStampa', 'vLocale'].includes(vista) ? 'vSerate' : vista === 'vPalco' ? '' : vista;
   document.querySelectorAll('#barra button').forEach((b) => b.classList.toggle('attivo', b.dataset.vista === voce));
   $('btnImpostazioni').classList.toggle('attivo', vista === 'vImpostazioni');   // T7 (decisione 2B): le impostazioni sono la ⚙ in testata
   if (!['vBrano', 'vTesto', 'vLettura'].includes(vista)) tornaSerata = null;

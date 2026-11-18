@@ -1,4 +1,4 @@
-/* DFAK – Repertorio · scheda.js (T8-bis-1 Setup e foglio, progetto approvato il 17/11/2026)
+/* DFAK – Repertorio · scheda.js (T8-bis-1 Setup e foglio, progetto approvato il 17/11/2026; T8-bis-2 Collegamento e invio, 18/11/2026)
  * Setup ideali e scheda tecnica della serata: canali, monitor, stage plan, backline, prese, note; foglio A4 stile B.
  * La vedono tutti, la modifica solo l'ADMIN (chiave ADMIN). Si carica DOPO app.js e ne usa le funzioni
  * ($, el, stato, risposta, chiama, puoScrivere, salvaCopia, vai, mostra, memoria, nuovoIdBrano, serataAperta, chiediConferma).
@@ -11,14 +11,16 @@
     modeller: 'Modeller', tastiera: 'Tastiera', astaVoce: 'Asta voce', wedge: 'Wedge', centralinaIem: 'Centralina in-ear',
     di: 'DI', presa: 'Presa 230 V', stagebox: 'Stage box S16', rackWing: 'Rack WING', splitter: 'Splitter',
     cassa: 'Cassa', rullante: 'Rullante', tom: 'Tom', timpano: 'Timpano', hihat: 'Hi-hat', ride: 'Ride', crash: 'Crash', splash: 'Splash',
-    china: 'China', sgabello: 'Sgabello', pedana: 'Pedana' };
+    china: 'China', sgabello: 'Sgabello', pedana: 'Pedana', cassaPa: 'Cassa PA', sub: 'Sub' };
   // Ingombro in cm (larghezza × profondità) usato per disegno e trascinamento.
   const MISURA = { batteria: [180, 150], ampliChitarra: [70, 35], ampliBasso: [65, 45], pedaliera: [70, 30], modeller: [60, 30],
     tastiera: [130, 40], astaVoce: [36, 36], wedge: [60, 45], centralinaIem: [45, 30], di: [24, 18], presa: [30, 30],
     stagebox: [50, 30], rackWing: [55, 50], splitter: [50, 30],
     // variante batteria a pezzi (17/11/2026): misure viste dall'alto
     cassa: [55, 40], rullante: [36, 36], tom: [30, 30], timpano: [40, 40], hihat: [36, 36], ride: [50, 50], crash: [44, 44], splash: [26, 26],
-    china: [40, 40], sgabello: [35, 35] };
+    china: [40, 40], sgabello: [35, 35],
+    // T8-bis-2 (D10): casse dell'impianto (nostre in 1B, del locale in 1A)
+    cassaPa: [40, 35], sub: [60, 55] };
   const misura = (o) => (o.tipo === 'pedana' ? [o.larghezza * 100, o.profondita * 100] : MISURA[o.tipo] || [30, 30]);
   const NS = 'http://www.w3.org/2000/svg';
 
@@ -28,6 +30,7 @@
   // Variante zoom (17/11/2026): ingrandimento SOLO nell'editor, non si salva; centro della vista in metri
   const ZOOM = [1, 2, 3, 4];
   let zoom = 1, vista = null, ultimoTocco = null;
+  let testoToccato = false;   // T8-bis-2: il messaggio corretto a mano non si riscrive da solo (e non si salva)
 
   const schedeTutte = () => { const r = risposta(); return (r && r.schede) || []; };
   const indice = () => { const r = risposta(); return (r && r.schedeIndice) || []; };
@@ -116,8 +119,13 @@
     $('kNomeRiga').hidden = sk.tipo !== 'setup';
     $('kCorpo').hidden = vuota;
     $('kRev').hidden = sk.tipo !== 'serata' || vuota;
-    $('kRevTesto').textContent = sk.rev ? R.pieDiPagina({ rev: sk.rev, data: sk.revData }) + (sk.revInviata ? ' · inviata' : ' · non ancora inviata') : '';
-    $('kBtnInviata').hidden = !stato.admin || sk.revInviata;
+    scriviRev();
+    // T8-bis-2: collegamento solo nelle serate; invio per tutti (D11 A)
+    $('kTabColl').hidden = sk.tipo !== 'serata';
+    if (sk.tipo !== 'serata' && scheda === 'collegamento') scheda = 'canali';
+    $('kInvia').hidden = sk.tipo !== 'serata' || vuota;
+    $('kBtnEsporta').hidden = !stato.admin || vuota;
+    testoToccato = false; $('kInviaTipo').value = '';
     $('kElimina').hidden = !(stato.admin && sk.tipo === 'setup' && sk.versione);
     $('kBtnDuplica').hidden = !(stato.admin && sk.tipo === 'setup' && sk.versione);
     $('kSolaLettura').hidden = stato.admin;
@@ -130,7 +138,9 @@
     const no = !puoModificare();
     ['kCampi', 'kCampiMon', 'kCampiAltro', 'kCampiPalco'].forEach((id) => { $(id).disabled = no; });
     $('kNome').disabled = no;
-    ['kBtnCopia', 'kBtnInviata', 'kBtnElimina', 'kBtnDuplica'].forEach((id) => { $(id).disabled = no; });
+    ['kBtnCopia', 'kBtnElimina', 'kBtnDuplica'].forEach((id) => { $(id).disabled = no; });
+    $('kCampiColl').disabled = no;
+    $('kBtnInviata').disabled = senzaRete();   // T8-bis-2 (D11 A): lo segna chiunque, serve solo la rete
     if (ordinatoreCanali) ordinatoreCanali.option('disabled', no);
   }
   function mostraScheda(n) {
@@ -141,7 +151,15 @@
     if (n === 'monitor') disegnaMonitor();
     if (n === 'palco') disegnaPalcoEditor();
     if (n === 'altro') riempiAltro();
+    if (n === 'collegamento') disegnaCollegamento();
+    if (!$('kInvia').hidden) disegnaInvia();
   }
+  /** Revisione con chi l'ha segnata inviata e quando (D11 A). */
+  function scriviRev() {
+    $('kRevTesto').textContent = sk.rev ? R.pieDiPagina({ rev: sk.rev, data: sk.revData }) + (sk.revInviata ? ' · inviata' + (sk.inviataDa ? ' da ' + nomeDi(sk.inviataDa) : '') + (sk.inviataIl ? ' il ' + R.dataBreve(sk.inviataIl) : '') : ' · non ancora inviata') : '';
+    $('kBtnInviata').hidden = !!sk.revInviata;
+  }
+  function nomeDi(sigla) { const m = R.MEMBRI.find((x) => x.sigla === sigla); return m ? m.nome : sigla; }
 
   /* ---------- Salvataggio ---------- */
   function occupata() {
@@ -183,9 +201,10 @@
     salvaCopia();
     if (sk && sk.id === k.id) {
       sk.versione = k.versione; sk.rev = k.rev; sk.revData = k.revData; sk.revInviata = k.revInviata; sk.setupOrigine = k.setupOrigine;
+      sk.inviataDa = k.inviataDa; sk.inviataIl = k.inviataIl;
       $('kRev').hidden = sk.tipo !== 'serata';
-      $('kRevTesto').textContent = R.pieDiPagina({ rev: sk.rev, data: sk.revData }) + (sk.revInviata ? ' · inviata' : ' · non ancora inviata');
-      $('kBtnInviata').hidden = !stato.admin || sk.revInviata;
+      scriviRev();
+      if (!$('kInvia').hidden && !testoToccato) disegnaInvia();
       $('kElimina').hidden = !(stato.admin && sk.tipo === 'setup');
       $('kBtnDuplica').hidden = !(stato.admin && sk.tipo === 'setup');
     }
@@ -215,7 +234,7 @@
       const man = el('span', 'maniglia', '≡');
       const lin = el('span', 'k-linea', R.etichettaLinee(c, x.id));
       const nome = el('span', 'titolo', x.sorgente || '(senza nome)');
-      const det = el('span', 'k-det', [R.testoMic(x.mic), x.phantom ? '48V' : '', x.click ? 'solo monitor' : '', x.fornito === 'locale' ? 'mic locale' : ''].filter(Boolean).join(' · '));
+      const det = el('span', 'k-det', dettaglioCanale(x));
       testa.append(man, lin, famigliaQuadro(x.famiglia), nome, det);
       testa.addEventListener('click', (e) => { if (e.target === man) return; canaleAperto = canaleAperto === x.id ? null : x.id; sk.contenuto = R.normalizzaScheda(sk.contenuto); disegnaCanali(); });
       li.append(testa);
@@ -236,6 +255,10 @@
       }
     });
   }
+  function dettaglioCanale(y) {
+    return [R.testoMic(y.mic), y.phantom ? '48V' : '', y.click ? 'solo monitor' : '', y.fornito === 'locale' ? 'mic locale' : '',
+      sk.contenuto.collegamento === '3' && !y.click && !y.split ? 'no split' : ''].filter(Boolean).join(' · ');
+  }
   function campo(etichetta, input) { const d = el('label', 'k-campo'); d.append(el('span', 'etichetta', etichetta), input); return d; }
   function scelta(valori, attuale, nomi) {
     const s = el('select');
@@ -253,10 +276,11 @@
     const astaDa = scelta(R.FORNITO, x.astaDa, ['Band', 'Locale']);   // C1: chi porta l'asta, a parte dal microfono
     const ph = el('input'); ph.type = 'checkbox'; ph.checked = x.phantom;
     const ck = el('input'); ck.type = 'checkbox'; ck.checked = x.click;
+    const sp = el('input'); sp.type = 'checkbox'; sp.checked = x.split; sp.disabled = x.click;   // T8-bis-2 (D5): solo in modalità 3
     // (non ovvio) normalizzaScheda crea oggetti nuovi: il canale si ritrova sempre per id, mai con il riferimento vecchio
     const leggi = () => {
       const y = sk.contenuto.canali.find((z) => z.id === x.id); if (!y) return;
-      Object.assign(y, { sorgente: sorg.value, mic: mic.value, note: note.value, famiglia: fam.value, stereo: st.value === 'stereo', asta: asta.value, fornito: forn.value, astaDa: astaDa.value, phantom: ph.checked, click: ck.checked });
+      Object.assign(y, { sorgente: sorg.value, mic: mic.value, note: note.value, famiglia: fam.value, stereo: st.value === 'stereo', asta: asta.value, fornito: forn.value, astaDa: astaDa.value, phantom: ph.checked, click: ck.checked, split: sp.checked });
     };
     // (non ovvio) mentre si scrive NON si ridisegna la lista: passando al campo dopo, il ridisegno toglieva il campo da sotto il dito.
     // Si aggiorna solo la riga in testa; l'ordine per famiglia si rifà quando il riquadro si chiude o cambia una scelta.
@@ -264,16 +288,17 @@
       const li = box.closest('li'); if (!li) return;
       const y = sk.contenuto.canali.find((z) => z.id === x.id) || x;
       li.querySelector('.titolo').textContent = y.sorgente || '(senza nome)';
-      li.querySelector('.k-det').textContent = [R.testoMic(y.mic), y.phantom ? '48V' : '', y.click ? 'solo monitor' : '', y.fornito === 'locale' ? 'mic locale' : ''].filter(Boolean).join(' · ');
+      li.querySelector('.k-det').textContent = dettaglioCanale(y);
     };
     [sorg, mic, note].forEach((i) => i.addEventListener('input', () => { leggi(); aggiornaTesta(); cambio(); }));
-    [fam, st, asta, forn, astaDa, ph, ck].forEach((i) => i.addEventListener('change', () => { leggi(); sk.contenuto = R.normalizzaScheda(sk.contenuto); disegnaCanali(); cambio(); }));
+    [fam, st, asta, forn, astaDa, ph, ck, sp].forEach((i) => i.addEventListener('change', () => { leggi(); sk.contenuto = R.normalizzaScheda(sk.contenuto); disegnaCanali(); cambio(); }));
     const pc = el('label', 'k-check'); pc.append(ph, document.createTextNode(' 48V'));
     const cc = el('label', 'k-check'); cc.append(ck, document.createTextNode(' Click (solo monitor, mai in PA)'));
+    const sc = el('label', 'k-check k-split'); sc.append(sp, document.createTextNode(' Va allo splitter del locale')); sc.hidden = sk.contenuto.collegamento !== '3';
     const elim = el('button', 'secondario', 'Togli canale'); elim.type = 'button';
     elim.addEventListener('click', () => { sk.contenuto.canali = sk.contenuto.canali.filter((y) => y.id !== x.id); canaleAperto = null; disegnaCanali(); cambio(); });
     box.append(campo('Sorgente', sorg), campo('Famiglia', fam), campo('Mono / stereo', st), campo('Mic / DI (si aggiunge "o equivalente")', mic),
-      campo('Microfono / DI fornito da', forn), campo('Asta', asta), campo('Asta fornita da', astaDa), pc, cc, campo('Note', note), elim);
+      campo('Microfono / DI fornito da', forn), campo('Asta', asta), campo('Asta fornita da', astaDa), pc, cc, sc, campo('Note', note), elim);
     return box;
   }
   function nuovoCanale() {
@@ -295,6 +320,12 @@
       elim.addEventListener('click', () => { sk.contenuto.monitor = sk.contenuto.monitor.filter((y) => y !== m); disegnaMonitor(); cambio(); });
       const r1 = el('div', 'riga-campi'); r1.append(t('mix', 12, 'MX1', 'corto'), t('chi', 30, 'Chi'), tipo, elim);
       li.append(r1, t('posizione', 30, 'Posizione (es. fronte palco sx)'), t('ascolto', 120, 'In cuffia o in spia: voce, click, basi…'));
+      if (String(sk.contenuto.collegamento).indexOf('1A') === 0) {   // T8-bis-2 (D10): il mix va su una spia del locale, via il loro mixer
+        const cb = el('input'); cb.type = 'checkbox'; cb.checked = m.sulleSpieLocale;
+        cb.addEventListener('change', () => { m.sulleSpieLocale = cb.checked; cambio(); });
+        const lab = el('label', 'k-check'); lab.append(cb, document.createTextNode(' Sulle spie del locale (via il loro mixer)'));
+        li.append(lab);
+      }
       ul.append(li);
     });
   }
@@ -377,6 +408,11 @@
       g.append(s('polygon', Object.assign({ points: [x + 8, y, x + w - 8, y, x + w, y + h, x, y + h].join(' ') }, tratto, { 'stroke-width': 3 })), s('line', { x1: x + 4, x2: x + w - 4, y1: y + h * .6, y2: y + h * .6, stroke: '#000', 'stroke-width': 1.5 }));
     } else if (tipo === 'centralinaIem') {
       g.append(box(), s('line', { x1: x + 6, y1: y, x2: x - 2, y2: y - 14, stroke: '#000', 'stroke-width': 2.5 }), s('line', { x1: x + w - 6, y1: y, x2: x + w + 2, y2: y - 14, stroke: '#000', 'stroke-width': 2.5 }), testoSvg(0, 0, 'IEM', 12));
+    } else if (tipo === 'cassaPa') {
+      g.append(s('polygon', Object.assign({ points: [x, y, x + w, y, x + w - 5, y + h, x + 5, y + h].join(' ') }, tratto, { 'stroke-width': 3 })),
+        s('circle', Object.assign({ cx: 0, cy: 3, r: 10 }, tratto, { 'stroke-width': 1.5 })), s('rect', { x: x - 1, y: y + h - 5, width: w + 2, height: 5, fill: '#000' }), testoSvg(0, -h / 2 + 7, 'PA', 9));
+    } else if (tipo === 'sub') {
+      g.append(box({ 'stroke-width': 3 }), s('circle', Object.assign({ cx: 0, cy: 0, r: h / 2 - 7 }, tratto, { 'stroke-width': 2 })), s('rect', { x: x - 1, y: y + h - 6, width: w + 2, height: 6, fill: '#000' }), testoSvg(0, 0, 'SUB', 12));
     } else if (tipo === 'presa') {
       g.append(s('circle', Object.assign({ cx: 0, cy: 0, r: 15 }, tratto, { 'stroke-width': 2.5 })), s('circle', { cx: -5, cy: 0, r: 2.6, fill: '#000' }), s('circle', { cx: 5, cy: 0, r: 2.6, fill: '#000' }));
       g.append(testoSvg(17, -15, '×' + (prese || 1), 13, { 'text-anchor': 'start' }));
@@ -601,6 +637,133 @@
   }
   function iconaCorrente() { return sk.contenuto.palco.icone.find((x) => x.id === iconaScelta); }
 
+  /* ---------- T8-bis-2 · Collegamento (solo serata; modifica solo l'ADMIN) ---------- */
+  const locali = () => (window.Locali ? Locali.tutti() : []);
+  const numeroCampo = (v) => (String(v).trim() === '' ? null : Number(String(v).replace(',', '.')));
+  const scriviNum = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
+  function localeDellaRubrica() { const l = sk.contenuto.locale; return l && l.id ? locali().find((x) => x.id === l.id) || null : null; }
+  /** D7: il locale proposto è quello con lo stesso nome scritto nella serata (campo libero della T7). */
+  function localeProposto() {
+    const s1 = serataDi(sk); if (!s1 || !s1.locale) return null;
+    const n = String(s1.locale).trim().toLowerCase();
+    return locali().find((x) => String(x.nome).trim().toLowerCase() === n) || null;
+  }
+  function disegnaCollegamento() {
+    const c = sk.contenuto, dl = c.locale;
+    const sel = $('kLocScelta'); sel.textContent = '';
+    const o0 = el('option', '', locali().length ? '— scegli dalla rubrica —' : 'Rubrica vuota: aggiungi i locali in Serate'); o0.value = ''; sel.append(o0);
+    locali().forEach((l) => { const o = el('option', '', l.nome + (l.citta ? ' · ' + l.citta : '')); o.value = l.id; sel.append(o); });
+    const prop = localeProposto();
+    sel.value = dl && dl.id && locali().some((x) => x.id === dl.id) ? dl.id : (!dl && prop ? prop.id : '');
+    $('kLocCopia').textContent = dl ? 'Ricopia' : 'Usa';
+    $('kLocProposta').textContent = dl ? 'Dati del locale copiati per questa serata' + (dl.id && !localeDellaRubrica() ? ' (il locale non è più nella rubrica)' : '') + ': se li cambi qui, "Aggiorna il locale" li riporta nella rubrica.'
+      : prop ? 'Proposto: ' + prop.nome + ', stesso nome scritto nella serata.' : '';
+    $('kLocDati').hidden = !dl;
+    $('kLocNuovo').hidden = !!localeDellaRubrica();   // D7: solo se il locale della serata non è già in rubrica
+    if (dl) {
+      const mx = $('kLocMixer'); mx.textContent = '';
+      [{ id: '', nome: '—' }].concat(R.MIXER_LOCALE).forEach((m) => { const o = el('option', '', m.nome); o.value = m.id; mx.append(o); });
+      mx.value = dl.mixer;
+      $('kLocDistanza').value = scriviNum(dl.distanza); $('kLocPalcoL').value = scriviNum(dl.palcoL); $('kLocPalcoP').value = scriviNum(dl.palcoP);
+      $('kLocImpianto').value = dl.impianto; $('kLocSubAux').value = dl.subAux; $('kLocSpie').value = scriviNum(dl.spieCablate); $('kLocCanali').value = scriviNum(dl.canaliLiberi);
+      $('kLocImpiantoNote').value = dl.impiantoNote;
+      $('kLocAggiorna').hidden = !localeDellaRubrica();
+    }
+    const mod = $('kModalita'); mod.textContent = '';
+    [{ id: '', nome: 'Nessuna (si propone la prima domanda)' }].concat(R.COLLEGAMENTI).forEach((x) => { const o = el('option', '', x.nome); o.value = x.id; mod.append(o); });
+    mod.value = c.collegamento;
+    aggiornaCollegamento();
+  }
+  /** Le parti che cambiano mentre si scrive: suggerimento, misure del palco, "Mic da", controlli (senza ricreare i campi). */
+  function aggiornaCollegamento() {
+    const c = sk.contenuto, dl = c.locale;
+    const sug = R.suggerisciModalita(dl || {}), col = R.COLLEGAMENTI.find((x) => x.id === sug.modalita);
+    $('kSuggerimento').textContent = !dl ? 'Scegli il locale: la modalità consigliata viene dal suo mixer di sala.'
+      : col ? (sug.modalita === c.collegamento ? 'È la modalità consigliata per questo locale.' : 'Consigliata per questo locale: ' + col.nome + '.') + (sug.avviso ? ' ' + sug.avviso : '')
+      : sug.primaDomanda ? 'Mixer di sala non noto: manda la prima domanda ("che mixer avete?").' : '';
+    const ms = $('kLocMisure');
+    ms.hidden = !(dl && dl.palcoL && dl.palcoP && (dl.palcoL !== c.palco.larghezza || dl.palcoP !== c.palco.profondita));
+    if (!ms.hidden) ms.textContent = 'Usa le misure del palco del locale (' + scriviNum(dl.palcoL) + ' × ' + scriviNum(dl.palcoP) + ' m)';
+    const rf = R.righeFornito(c.canali, c.collegamento);
+    $('kFornito').hidden = !rf.diversi;
+    if (rf.diversi) {
+      $('kFornitoTesto').textContent = (rf.atteso === 'locale' ? 'Con il service del locale di solito microfoni e aste li dà il locale. ' : 'In questa modalità di solito microfoni e aste li porta la band. ') + rf.diversi + (rf.diversi === 1 ? ' riga è segnata "' : ' righe sono segnate "') + (rf.atteso === 'locale' ? 'band' : 'locale') + '".';
+      $('kFornitoApplica').textContent = 'Metti "' + (rf.atteso === 'locale' ? 'locale' : 'band') + '" su tutte';
+    }
+    const ul = $('kControlli'); ul.textContent = '';
+    R.controlliScheda(c).forEach((x) => ul.append(el('li', 'k-controllo ' + x.livello, (x.livello === 'info' ? 'ℹ ' : '⚠ ') + x.testo)));
+  }
+  function leggiLocaleScheda() {
+    const dl = sk.contenuto.locale; if (!dl) return;
+    Object.assign(dl, { mixer: $('kLocMixer').value, distanza: numeroCampo($('kLocDistanza').value), palcoL: numeroCampo($('kLocPalcoL').value), palcoP: numeroCampo($('kLocPalcoP').value),
+      impianto: $('kLocImpianto').value, subAux: $('kLocSubAux').value, spieCablate: numeroCampo($('kLocSpie').value), canaliLiberi: numeroCampo($('kLocCanali').value), impiantoNote: $('kLocImpiantoNote').value });
+  }
+  /** "Aggiorna il locale" (D7): i dati tecnici della copia tornano nella rubrica; contatti e note restano quelli della rubrica. */
+  async function aggiornaLocale() {
+    const l = localeDellaRubrica(); if (!l) return;
+    sk.contenuto = R.normalizzaScheda(sk.contenuto);
+    const dl = sk.contenuto.locale, nuovo = Object.assign({}, l, R.normalizzaDatiLocale(dl), { id: l.id, nome: dl.nome || l.nome, citta: dl.citta || l.citta, contatti: l.contatti, note: l.note });
+    const j = await azione('salvaLocale', { locale: nuovo, versione: l.versione }, 'esitoK');
+    if (j) { Locali.ricevi(j.locale); mostra('esitoK', 'Locale ' + j.locale.nome + ' aggiornato nella rubrica.'); disegnaCollegamento(); }
+  }
+  /** "Salva come nuovo locale" (D7): crea la voce in rubrica dai dati della serata. */
+  async function nuovoLocale() {
+    const s1 = serataDi(sk);
+    sk.contenuto = R.normalizzaScheda(sk.contenuto);
+    const dl = sk.contenuto.locale || R.normalizzaDatiLocale({});
+    const id = nuovoIdBrano(), nome = dl.nome || (s1 && s1.locale) || '';
+    if (!nome) return mostra('esitoK', 'Scrivi prima il locale nella serata: serve il nome.', true);
+    const j = await azione('salvaLocale', { locale: Object.assign({}, dl, { id, nome, contatti: [] }) }, 'esitoK');
+    if (!j) return;
+    Locali.ricevi(j.locale);
+    sk.contenuto.locale = R.normalizzaDatiLocale(j.locale);
+    disegnaCollegamento(); cambio();
+    mostra('esitoK', 'Locale ' + j.locale.nome + ' aggiunto alla rubrica: i contatti si scrivono in Serate → Locali.');
+  }
+
+  /* ---------- T8-bis-2 · Invio al contatto (tutti, D11 A; D3 B: PDF dalla stampa + WhatsApp col messaggio) ---------- */
+  function contattiScheda() { const l = localeDellaRubrica(); return l ? l.contatti : []; }
+  function disegnaInvia() {
+    const sel = $('kInviaContatto'), prima = sel.value;
+    sel.textContent = '';
+    const cs = contattiScheda();
+    cs.forEach((c, i) => { const o = el('option', '', c.nome + ' (' + c.ruolo + ')' + (c.tiene ? ' · lo tiene ' + c.tiene : '') + (c.telefono ? '' : ' · senza numero')); o.value = String(i); sel.append(o); });
+    const o0 = el('option', '', cs.length ? 'Un altro contatto (scegli in WhatsApp)' : 'Nessun contatto in rubrica: scegli in WhatsApp'); o0.value = ''; sel.append(o0);
+    const mio = io() && cs.findIndex((c) => c.tiene === io().sigla);
+    sel.value = prima !== '' && cs[Number(prima)] ? prima : mio >= 0 ? String(mio) : cs.length ? '0' : '';
+    if (!testoToccato) $('kInviaTesto').value = messaggio();
+    $('kInviaNota').textContent = 'Dopo l\'invio tocca "Segna come inviata": così la prossima modifica diventa la Rev. ' + ((sk.rev || 1) + 1) + '.';
+  }
+  function messaggio() {
+    const me = io(), ref = referente();
+    const mittente = { nome: me ? me.nome : (ref.nome || 'la band'), referente: !!stato.admin };
+    return R.messaggioTecnico({ contenuto: R.normalizzaScheda(sk.contenuto), serata: serataDi(sk) || {}, referente: ref, mittente, rev: sk.rev || 1, tipo: $('kInviaTipo').value });
+  }
+  async function scriviAlContatto() {
+    const testo = $('kInviaTesto').value, i = $('kInviaContatto').value, c = i === '' ? null : contattiScheda()[Number(i)];
+    const n = c ? R.numeroWa(c.telefono) : '';
+    if (n) {
+      const a = $('kInviaLink') || document.body.appendChild(Object.assign(el('a'), { id: 'kInviaLink', target: '_blank', rel: 'noopener', hidden: true }));
+      a.href = 'https://wa.me/' + n + '?text=' + encodeURIComponent(testo);
+      a.click();
+      return mostra('esitoK', 'Si apre WhatsApp con ' + c.nome + ': allega il PDF con la graffetta e invia.');
+    }
+    if (navigator.share) { try { await navigator.share({ text: testo }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+    try { await navigator.clipboard.writeText(testo); mostra('esitoK', 'Messaggio copiato: incollalo in WhatsApp.'); } catch (e) { mostra('esitoK', 'Copia il messaggio dal riquadro.', true); }
+  }
+  /** D9: file .json per la Scheda Gig (solo ADMIN). */
+  function nomeFileGig(k) {
+    const s1 = serataDi(k), pul = (t) => String(t || '').replace(/[\/\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+    return (s1 ? [s1.data, pul(s1.locale)].filter(Boolean).join(' ') : pul(nomeSetup(k.nome))) + ' - Scheda Gig.json';
+  }
+  function esporta() {
+    const dati = R.esportaSchedaGig(R.normalizzaScheda(sk.contenuto), serataDi(sk) || {});
+    const url = URL.createObjectURL(new Blob([JSON.stringify(dati, null, 1)], { type: 'application/json' }));
+    const a = el('a'); a.href = url; a.download = nomeFileGig(sk); document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    mostra('esitoK', 'Scaricato "' + a.download + '": aprilo nella Scheda Gig con "Carica".');
+  }
+
   /* ---------- Foglio A4 stile B (pagina 1: palco; pagina 2: canali, monitor, backline, note) ---------- */
   function testaFoglioK(k) {
     const t = el('div', 'testa-f k-testa');
@@ -635,7 +798,10 @@
       o.append(el('b', '', 'Orari'), el('span', '', [c.orari.carico ? 'carico ' + c.orari.carico : '', c.orari.soundcheck ? 'soundcheck ' + c.orari.soundcheck : '', s1.orario ? 'inizio ' + s1.orario : ''].filter(Boolean).join(' · ') || '—'));
       info.append(o);
     }
-    p1.append(info, el('h3', '', 'Stage plan'));
+    p1.append(info);
+    const rc = k.tipo === 'serata' ? R.righeCollegamento(c) : null;   // T8-bis-2 (D5): cosa chiediamo al locale
+    if (rc) { const b = el('div', 'k-coll'); b.append(el('b', '', 'Collegamento · ' + rc.titolo)); const ul = el('ul'); rc.righe.forEach((t) => ul.append(el('li', '', t))); b.append(ul); p1.append(b); }
+    p1.append(el('h3', '', 'Stage plan'));
     const svg = s('svg', { class: 'k-palco', xmlns: NS }); disegnaPalco(svg, c.palco, false); p1.append(svg);
     // C4: in legenda solo gli oggetti usati; i pezzi della batteria in una voce sola, icone più grandi
     const tipi = []; let batteria = false;
@@ -662,14 +828,18 @@
     // Pagina 2
     const p2 = el('div', 'pagina k-pagina');
     p2.append(testaFoglioK(k), el('h3', '', 'Channel list'));
+    const mod = k.tipo === 'serata' ? c.collegamento : '', conSplit = mod === '3';
     const righe = R.numeraLinee(c.canali).map((x) => {
-      if (x.libera) return { classe: 'libera', celle: [String(x.linea), 'libera', '', '', '', '', '', ''] };
+      if (x.libera) return { classe: 'libera', celle: [String(x.linea), 'libera', '', '', '', '', '', ''].concat(conSplit ? [''] : []) };
       const y = x.canale, nome = el('span', 'k-sorg'); nome.append(famigliaQuadro(y.famiglia), document.createTextNode(' ' + R.nomeLinea(y.sorgente, x.lato)));
       const chi = (v) => (v === 'locale' ? 'Locale' : 'Band');
-      return { classe: y.click ? 'click' : '', celle: [String(x.linea), nome, R.testoMic(y.mic), y.mic ? chi(y.fornito) : '—', y.asta === 'nessuna' ? '—' : y.asta, y.asta === 'nessuna' ? '—' : chi(y.astaDa), y.phantom ? '48V' : '', [y.click ? 'SOLO MONITOR, MAI IN PA' : '', y.note].filter(Boolean).join(' · ')] };
+      const celle = [String(x.linea), nome, R.testoMic(y.mic), y.mic ? chi(y.fornito) : '—', y.asta === 'nessuna' ? '—' : y.asta, y.asta === 'nessuna' ? '—' : chi(y.astaDa), y.phantom ? '48V' : ''];
+      if (conSplit) celle.push(y.split ? 'sì' : 'no');
+      celle.push([y.click ? 'SOLO MONITOR, MAI IN PA' : '', y.note].filter(Boolean).join(' · '));
+      return { classe: y.click ? 'click' : '', celle };
     });
-    // C1: due colonne separate, "Mic da" e "Asta da"
-    p2.append(tabella(['Ch', 'Sorgente', 'Mic / DI', 'Mic da', 'Asta', 'Asta da', '48V', 'Note'], righe, 'k-canali'));
+    // C1: due colonne separate, "Mic da" e "Asta da"; T8-bis-2: in AES50 la linea è il canale del FOH, nello split la colonna Split
+    p2.append(tabella([mod === '2' ? 'Linea = ch FOH' : 'Ch', 'Sorgente', 'Mic / DI', 'Mic da', 'Asta', 'Asta da', '48V'].concat(conSplit ? ['Split'] : []).concat(['Note']), righe, 'k-canali' + (conSplit ? ' k-con-split' : '')));
     const fams = []; c.canali.forEach((y) => { if (fams.indexOf(y.famiglia) < 0) fams.push(y.famiglia); });
     const lf = el('div', 'k-fams'); fams.forEach((fm) => { const d = el('span'); d.append(famigliaQuadro(fm), document.createTextNode(' ' + R.famigliaDi(fm).nome)); lf.append(d); }); p2.append(lf);
     // C2: riepilogo calcolato dalla channel list
@@ -684,9 +854,13 @@
     }
     if (c.monitor.length) {
       p2.append(el('h3', '', 'Monitor'));
+      // T8-bis-2 (D5): nelle modalità 1-2-3 i monitor sono della band; in 1A si dice per ogni mix dove esce
+      if (mod && mod !== '4') p2.append(el('p', 'k-gestiti', 'Gestiti dalla band, dal nostro mixer.'));
+      const esce = mod.indexOf('1A') === 0;
       // C7: la colonna "In cuffia o in spia" si nasconde da sola se è vuota su tutte le righe
       const conAscolto = c.monitor.some((m) => m.ascolto);
-      p2.append(tabella(['Mix', 'Chi', 'Tipo', 'Posizione'].concat(conAscolto ? ['In cuffia o in spia'] : []), c.monitor.map((m) => ({ celle: [m.mix, m.chi, m.tipo, m.posizione].concat(conAscolto ? [m.ascolto] : []) })), 'k-mon'));
+      p2.append(tabella(['Mix', 'Chi', 'Tipo', 'Posizione'].concat(conAscolto ? ['In cuffia o in spia'] : []).concat(esce ? ['Esce su'] : []),
+        c.monitor.map((m) => ({ celle: [m.mix, m.chi, m.tipo, m.posizione].concat(conAscolto ? [m.ascolto] : []).concat(esce ? [m.sulleSpieLocale ? 'Spia del locale (aux del vostro mixer)' : 'Band'] : []) })), 'k-mon'));
     }
     if (c.backline.porta || c.backline.chiede) {
       p2.append(el('h3', '', 'Backline'));
@@ -809,10 +983,39 @@
       if (!sk.versione) fai(); else chiediConferma($('kBtnCopia'), fai);
     });
     $('kBtnInviata').addEventListener('click', async () => {
-      if (timer) { clearTimeout(timer); await salva(); }
+      if (timer && puoModificare()) { clearTimeout(timer); await salva(); }
       const j = await azione('segnaInviata', { scheda: sk.id }, 'esitoK');
       if (j) { ricevi(j.scheda); mostra('esitoK', 'Rev. ' + j.scheda.rev + ' segnata come inviata: la prossima modifica sarà la Rev. ' + (j.scheda.rev + 1) + '.'); }
     });
+    // T8-bis-2: collegamento, invio, esportazione
+    $('kLocCopia').addEventListener('click', () => {
+      const l = locali().find((x) => x.id === $('kLocScelta').value);
+      if (!l) return mostra('esitoK', 'Scegli un locale dalla rubrica (o creane uno in Serate → Locali).', true);
+      sk.contenuto.locale = R.normalizzaDatiLocale(l);
+      disegnaCollegamento(); cambio(); if (!$('kInvia').hidden) disegnaInvia();
+    });
+    ['kLocDistanza', 'kLocPalcoL', 'kLocPalcoP', 'kLocSpie', 'kLocCanali', 'kLocImpiantoNote'].forEach((id) => $(id).addEventListener('input', () => { leggiLocaleScheda(); aggiornaCollegamento(); cambio(); }));
+    ['kLocMixer', 'kLocImpianto', 'kLocSubAux'].forEach((id) => $(id).addEventListener('change', () => { leggiLocaleScheda(); aggiornaCollegamento(); cambio(); }));
+    ['kLocDistanza', 'kLocPalcoL', 'kLocPalcoP', 'kLocSpie', 'kLocCanali'].forEach((id) => $(id).addEventListener('change', () => { sk.contenuto = R.normalizzaScheda(sk.contenuto); disegnaCollegamento(); }));
+    $('kLocAggiorna').addEventListener('click', aggiornaLocale);
+    $('kLocNuovo').addEventListener('click', nuovoLocale);
+    $('kLocMisure').addEventListener('click', () => {
+      const dl = sk.contenuto.locale; if (!dl) return;
+      sk.contenuto.palco.larghezza = dl.palcoL; sk.contenuto.palco.profondita = dl.palcoP;
+      sk.contenuto = R.normalizzaScheda(sk.contenuto); aggiornaCollegamento(); cambio();
+      mostra('esitoK', 'Palco ' + scriviNum(dl.palcoL) + ' × ' + scriviNum(dl.palcoP) + ' m: controlla nello stage plan che gli oggetti siano ancora al loro posto.');
+    });
+    $('kModalita').addEventListener('change', () => { sk.contenuto.collegamento = $('kModalita').value; aggiornaCollegamento(); cambio(); if (!$('kInvia').hidden && !testoToccato) disegnaInvia(); });
+    $('kFornitoApplica').addEventListener('click', () => {
+      sk.contenuto.canali = R.applicaFornito(sk.contenuto.canali, sk.contenuto.collegamento);
+      sk.contenuto = R.normalizzaScheda(sk.contenuto); aggiornaCollegamento(); cambio();
+    });
+    $('kInviaPdf').addEventListener('click', apriFoglio);
+    $('kInviaContatto').addEventListener('change', () => { if (!testoToccato) $('kInviaTesto').value = messaggio(); });
+    $('kInviaTipo').addEventListener('change', () => { testoToccato = false; $('kInviaTesto').value = messaggio(); });
+    $('kInviaTesto').addEventListener('input', () => { testoToccato = true; });
+    $('kInviaScrivi').addEventListener('click', scriviAlContatto);
+    $('kBtnEsporta').addEventListener('click', esporta);
     $('kBtnDuplica').addEventListener('click', () => {
       const nuovo = { tipo: 'setup', id: nuovoIdBrano(), nome: (sk.nome + ' copia').slice(0, 30), contenuto: copia(sk.contenuto), versione: 0 };
       apriOggetto(nuovo); cambio();

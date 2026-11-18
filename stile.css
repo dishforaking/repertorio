@@ -521,3 +521,24 @@ button.stretto { margin: 0; padding: 4px 10px; }
 .k-foglio .k-testo ul { margin: 0 0 1.5mm; padding-left: 6mm; }
 .k-sottotit { display: block; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .04em; margin-top: 1mm; }
 .k-tab.k-canali td:nth-child(4), .k-tab.k-canali td:nth-child(6) { white-space: nowrap; }
+
+/* ---------- T8-bis-2: rubrica dei locali, collegamento, invio ---------- */
+.l-testa { margin-top: 18px; }
+.l-contatti { list-style: none; padding: 0; margin: 0 0 8px; }
+.l-contatto { border-left: 3px solid var(--oro, #E7C846); padding: 4px 0 4px 8px; margin-bottom: 10px; }
+.l-contatto .riga-campi select { flex: 1; }
+.k-fornito { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.k-fornito span { flex: 1 1 200px; }
+.k-fornito button { margin: 0; }
+.k-controlli { list-style: none; padding: 0; margin: 10px 0 0; }
+.k-controllo { padding: 6px 8px; margin-bottom: 6px; border-left: 3px solid #B62E27; background: rgba(182, 46, 39, .12); }
+.k-controllo.info { border-left-color: #29367C; background: rgba(41, 54, 124, .18); }
+#kInviaTesto { width: 100%; font-size: .95em; }
+/* foglio */
+.k-coll { margin: 2mm 0 1mm; padding: 2mm 3mm; border: 1.5pt solid #000; font-size: 9.5pt; }
+.k-coll b { display: block; font-size: 9pt; text-transform: uppercase; letter-spacing: .04em; }
+.k-coll ul { margin: 1mm 0 0; padding-left: 5mm; }
+.k-coll li { margin: .3mm 0; }
+.k-gestiti { margin: 0 0 1mm; font-size: 9.5pt; font-weight: 700; }
+/* (non ovvio) con il riquadro Collegamento lo stage plan si abbassa, così pagina 1 resta una sola pagina */
+.k-foglio .k-coll ~ .k-palco { max-height: 118mm; }

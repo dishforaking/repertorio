@@ -19,7 +19,7 @@
  * T8-bis-1 (v10): scheda tecnica (famiglie, linee e coppie stereo, Click ultimo, monitor, stage plan, revisioni).
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 11;
+  var VERSIONE_REGOLE = 12;
   var TAPPA = 8;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
@@ -1400,7 +1400,7 @@ var Regole = (function () {
   // Variante del 17/11/2026 (batteria a pezzi): ogni pezzo è un'icona sua; 'batteria' (disegno fisso) resta solo per le schede vecchie.
   var PEZZI_BATTERIA = ['cassa', 'rullante', 'tom', 'timpano', 'hihat', 'ride', 'crash', 'splash', 'china', 'sgabello'];
   var ICONE_PALCO = ['ampliChitarra', 'ampliBasso', 'pedaliera', 'modeller', 'tastiera', 'astaVoce',
-    'wedge', 'centralinaIem', 'di', 'presa', 'stagebox', 'rackWing', 'splitter'].concat(PEZZI_BATTERIA).concat(['pedana', 'batteria']);
+    'wedge', 'centralinaIem', 'di', 'presa', 'stagebox', 'rackWing', 'splitter', 'cassaPa', 'sub'].concat(PEZZI_BATTERIA).concat(['pedana', 'batteria']);
   var AGGANCIO_FINE = 0.05;   // i pezzi della batteria stanno a pochi cm l'uno dall'altro
   /* Set di Francesco (17/11/2026), posizioni in metri dal centro, per batterista DESTRO (assunzione: hi-hat alla sua sinistra,
      cioè a destra guardando dal pubblico, che sta in basso). Vale finché Francesco non salva il suo con "Salva come mio set". */
@@ -1438,7 +1438,8 @@ var Regole = (function () {
       // C1: chi porta l'asta, a parte (nelle schede vecchie vale come il microfono)
       astaDa: FORNITO.indexOf(c.astaDa) >= 0 ? c.astaDa : (FORNITO.indexOf(c.fornito) >= 0 ? c.fornito : 'band'),
       note: testoBreve(c.note, 80),
-      click: click
+      click: click,
+      split: !click && c.split !== false   // T8-bis-2 (D5): in modalità 3 la riga va allo splitter; il Click mai
     };
   }
   /* Ordine: famiglie come la Scheda Gig, dentro la famiglia l'ordine scritto; il Click sempre ultimo. */
@@ -1470,8 +1471,9 @@ var Regole = (function () {
     return m + ' o equivalente';
   }
   /* C5: il nome di una sorgente stereo senza "L+R", "L/R", "LR" in fondo (l'app aggiunge L e R da sola). */
+  function nomeStereo(sorgente) { return String(sorgente || '').replace(/\s*(L\s*\+\s*R|L\s*\/\s*R|LR)\s*$/i, '').trim(); }
   function nomeLinea(sorgente, lato) {
-    var n = String(sorgente || '').replace(/\s*(L\s*\+\s*R|L\s*\/\s*R|LR)\s*$/i, '').trim();
+    var n = nomeStereo(sorgente);
     return lato ? (n ? n + ' ' + lato : lato) : String(sorgente || '');
   }
   /* C2: riepilogo per il locale e per la band, contato per LINEA (una coppia stereo microfonata = 2 microfoni, 2 aste). */
@@ -1511,7 +1513,8 @@ var Regole = (function () {
   function normalizzaMix(m) {
     m = m || {};
     return { id: idInterno(m.id) ? m.id : '', mix: testoBreve(m.mix, 12), chi: testoBreve(m.chi, 30),
-      tipo: TIPI_MONITOR.indexOf(m.tipo) >= 0 ? m.tipo : 'wedge', posizione: testoBreve(m.posizione, 30), ascolto: testoBreve(m.ascolto, 120) };
+      tipo: TIPI_MONITOR.indexOf(m.tipo) >= 0 ? m.tipo : 'wedge', posizione: testoBreve(m.posizione, 30), ascolto: testoBreve(m.ascolto, 120),
+      sulleSpieLocale: m.sulleSpieLocale === true };   // T8-bis-2 (D10): in 1A il mix va su una spia del locale
   }
   function normalizzaIcona(o, palco) {
     o = o || {};
@@ -1548,7 +1551,10 @@ var Regole = (function () {
       orari: { carico: leggiOrario((s.orari || {}).carico) || '', soundcheck: leggiOrario((s.orari || {}).soundcheck) || '' },
       palco: palco,
       note: testoLungo(s.note, 1000),
-      ospitalita: testoLungo(s.ospitalita, 1000)   // C7: camerino e ospitalità, separati dalle note tecniche
+      ospitalita: testoLungo(s.ospitalita, 1000),   // C7: camerino e ospitalità, separati dalle note tecniche
+      // T8-bis-2: modalità di collegamento e copia dei dati tecnici del locale (solo nelle serate; vuoti = foglio come prima)
+      collegamento: COLLEGAMENTI.some(function (x) { return x.id === s.collegamento; }) ? s.collegamento : '',
+      locale: s.locale ? normalizzaDatiLocale(s.locale) : null
     };
   }
   /* Referente tecnico (uno solo, scritto dall'ADMIN): nome e telefono toccabile sul foglio. */
@@ -1572,6 +1578,257 @@ var Regole = (function () {
     var n = Math.max(1, Math.round(Number(r && r.rev) || 1));
     var d = r && r.data ? String(r.data).split('-').reverse().join('/') : '';
     return 'Rev. ' + n + (d ? ' · ' + d : '') + (n > 1 ? ' · sostituisce la Rev. ' + (n - 1) : '');
+  }
+
+  /* ===================== T8-bis-2 (v12): locali e collegamento (progetto approvato il 18/11/2026) ===================== */
+  // D2: mixer di sala nella rubrica e modalità suggerita (la 4 non si suggerisce mai: dipende dall'accordo)
+  var MIXER_LOCALE = [
+    { id: 'wing', nome: 'WING / WING Compact / WING Rack', modalita: '2' },
+    { id: 'x32', nome: 'Behringer X32 (tutti)', modalita: '2' },
+    { id: 'm32', nome: 'Midas M32 / M32R', modalita: '2' },
+    { id: 'm32c', nome: 'Midas M32C / Behringer X32 Core', modalita: '2', avviso: 'Verifica le porte AES50: su M32C e X32 Core non è sicuro che ci siano.' },
+    { id: 'midasPro', nome: 'Midas PRO / Heritage-D HD96', modalita: '3', avviso: 'AES50 a 96 kHz: probabilmente non si collega al WING (48 kHz).' },
+    { id: 'xr18', nome: 'Behringer XR18', modalita: '3' },
+    { id: 'mr18', nome: 'Midas MR18', modalita: '3' },
+    { id: 'yamaha', nome: 'Yamaha', modalita: '3' },
+    { id: 'ah', nome: 'Allen & Heath', modalita: '3' },
+    { id: 'soundcraft', nome: 'Soundcraft', modalita: '3' },
+    { id: 'digico', nome: 'DiGiCo', modalita: '3' },
+    { id: 'analogico', nome: 'Analogico (qualsiasi)', modalita: '1A-mixer' },
+    { id: 'altroDigitale', nome: 'Altro digitale', modalita: '3' },
+    { id: 'nonSo', nome: 'Non lo so ancora', modalita: '' },
+    { id: 'nessuno', nome: 'Nessun mixer', modalita: '' }
+  ];
+  var COLLEGAMENTI = [
+    { id: '1A-mixer', nome: '1A · Solo WING, nei canali del mixer del locale', foglio: 'Mixer della band nei canali del vostro mixer' },
+    { id: '1A-impianto', nome: '1A · Solo WING, direttamente sull\'impianto del locale', foglio: 'Mixer della band sul vostro impianto' },
+    { id: '1B', nome: '1B · WING e impianto nostro', foglio: 'Impianto e mixer della band' },
+    { id: '2', nome: '2 · Monitor noi + FOH del locale via AES50', foglio: 'Monitor della band, mixer di sala del locale collegato via AES50' },
+    { id: '3', nome: '3 · Monitor noi + FOH del locale con split analogico', foglio: 'Monitor della band, mixer di sala del locale con split analogico' },
+    { id: '4', nome: '4 · Service del locale', foglio: 'Service del locale' }
+  ];
+  var SI_NO = ['si', 'no', 'nonSo'];
+  var RUOLI_CONTATTO = ['tecnico', 'gestore', 'altro'];
+  var MAX_CONTATTI = 3, USCITE_WING = 16;   // WING Rack 8 XLR + S16 8 (doc FOH)
+  var FAMIGLIE_X32 = ['x32', 'm32', 'm32c'];
+  function numeroONull(v, min, max, passo) {
+    if (v === null || v === undefined || String(v).trim() === '') return null;
+    var n = Number(String(v).replace(',', '.'));
+    if (!isFinite(n)) return null;
+    if (passo) n = Math.round(n / passo) * passo;
+    return Math.round(Math.min(max, Math.max(min, n)) * 100) / 100;
+  }
+  function trovaMixer(id) { for (var i = 0; i < MIXER_LOCALE.length; i++) if (MIXER_LOCALE[i].id === id) return MIXER_LOCALE[i]; return null; }
+  function normalizzaContatto(c) {
+    c = c || {};
+    var tel = testoBreve(c.telefono, 20).replace(/[^0-9+ ]/g, '').trim();
+    return { nome: testoBreve(c.nome, 40), ruolo: RUOLI_CONTATTO.indexOf(c.ruolo) >= 0 ? c.ruolo : 'altro',
+      telefono: /\d/.test(tel) ? tel : '', tiene: SIGLE.indexOf(c.tiene) >= 0 ? c.tiene : '' };
+  }
+  /** Dati tecnici del locale: sono quelli che si copiano nella scheda della serata (D1: i contatti no). */
+  function normalizzaDatiLocale(l) {
+    l = l || {};
+    return { id: idValido(l.id) ? l.id : '', nome: testoBreve(l.nome, 40), citta: testoBreve(l.citta, 40),
+      mixer: trovaMixer(l.mixer) ? l.mixer : '', distanza: numeroONull(l.distanza, 0, 300),
+      palcoL: numeroONull(l.palcoL, PALCO_MIN, PALCO_MAX, PASSO_PALCO), palcoP: numeroONull(l.palcoP, PALCO_MIN, PALCO_MAX, PASSO_PALCO),
+      impianto: SI_NO.indexOf(l.impianto) >= 0 ? l.impianto : '', impiantoNote: testoLungo(l.impiantoNote, 200),
+      subAux: SI_NO.indexOf(l.subAux) >= 0 ? l.subAux : '', spieCablate: numeroONull(l.spieCablate, 0, 16, 1), canaliLiberi: numeroONull(l.canaliLiberi, 0, 64, 1) };
+  }
+  /** Riga della rubrica: dati tecnici + fino a 3 contatti ("lo tiene" = sigla del membro) + note. */
+  function normalizzaLocale(l) {
+    l = l || {};
+    var d = normalizzaDatiLocale(l);
+    d.contatti = (l.contatti || []).slice(0, MAX_CONTATTI).map(normalizzaContatto).filter(function (c) { return c.nome || c.telefono; });
+    d.note = testoLungo(l.note, 600);
+    return d;
+  }
+  /** D2/D10: modalità suggerita dal mixer di sala (e dall'impianto se non c'è mixer). */
+  function suggerisciModalita(dl) {
+    dl = dl || {};
+    var m = trovaMixer(dl.mixer);
+    if (!m || m.id === 'nonSo') return { modalita: '', primaDomanda: true };
+    if (m.id === 'nessuno') return { modalita: dl.impianto === 'si' ? '1A-impianto' : dl.impianto === 'no' ? '1B' : '' };
+    return m.avviso ? { modalita: m.modalita, avviso: m.avviso } : { modalita: m.modalita };
+  }
+  function fornitoModalita(mod) { return !mod ? null : mod === '4' ? 'locale' : 'band'; }
+  // D6: le righe che di solito cambiano con la modalità (escluse quelle che porta sempre la band: Click, modeller, basi)
+  function rigaFornibile(c) { return !c.click && !/^(modeller|playback)$/i.test(c.mic) && c.famiglia !== 'basi' && (!!c.mic || c.asta !== 'nessuna'); }
+  function righeFornito(canali, mod) {
+    var atteso = fornitoModalita(mod);
+    if (!atteso) return { atteso: null, diversi: 0 };
+    var n = 0;
+    (canali || []).forEach(function (c) { if (rigaFornibile(c) && ((c.mic && c.fornito !== atteso) || (c.asta !== 'nessuna' && c.astaDa !== atteso))) n++; });
+    return { atteso: atteso, diversi: n };
+  }
+  function applicaFornito(canali, mod) {
+    var atteso = fornitoModalita(mod);
+    return (canali || []).map(function (c) {
+      if (!atteso || !rigaFornibile(c)) return c;
+      var y = JSON.parse(JSON.stringify(c));
+      if (y.mic) y.fornito = atteso;
+      if (y.asta !== 'nessuna') y.astaDa = atteso;
+      return y;
+    });
+  }
+  /** AES50: le uscite vanno in fila, quindi N = ultima linea prima del Click (le libere in mezzo contano). */
+  function lineeAes50(canali) {
+    var n = 0;
+    numeraLinee(canali).forEach(function (r) { if (!(r.canale && r.canale.click)) n = Math.max(n, r.linea); });
+    return n;
+  }
+  function lineeDaSplittare(canali) {
+    return numeraLinee(canali).filter(function (r) { return r.canale && !r.canale.click && r.canale.split !== false; }).map(function (r) { return r.linea; });
+  }
+  function lineeTutte(canali) { return numeraLinee(canali).filter(function (r) { return !r.libera; }).length; }
+  function canaliWing(canali) { return (canali || []).length; }   // sul WING una sorgente stereo è un canale solo
+  /** 1A: canali che ci servono sul loro mixer e uscite del WING che usiamo. */
+  function conti1A(c) {
+    var sub = c.locale && c.locale.subAux === 'no' ? 0 : 1, spie = 0, nostre = 0;
+    (c.monitor || []).forEach(function (m) { if (m.sulleSpieLocale) spie++; else nostre += m.tipo === 'IEM stereo' ? 2 : 1; });
+    return { sub: sub, spie: spie, canali: 2 + sub + spie, uscite: 2 + sub + spie + nostre };
+  }
+  /** D8: controlli che si vedono solo nella scheda. livello "avviso" o "info". */
+  function controlliScheda(c) {
+    var out = [], mod = c.collegamento, dl = c.locale || {}, n;
+    if (!mod) return out;
+    var add = function (codice, testo, livello) { out.push({ codice: codice, livello: livello || 'avviso', testo: testo }); };
+    var x32 = FAMIGLIE_X32.indexOf(dl.mixer) >= 0;
+    if (mod === '2' && x32) {
+      n = lineeAes50(c.canali);
+      if (n > 32) add('x32Linee', n + ' linee verso il mixer di sala: X32 e M32 ne prendono al massimo 32 mono (gli extra vanno sugli aux in o vanno accorpati).');
+      var lib = numeraLinee(c.canali).filter(function (r) { return r.libera && r.linea < n; }).map(function (r) { return r.linea; });
+      if (lib.length) add('x32Libera', 'Linea libera ' + lib.join(', ') + ': X32 e M32 patchano a blocchi di 8 e la linea libera spreca un canale. Sposta un canale mono prima della coppia stereo.');
+    }
+    if (mod !== '4' && canaliWing(c.canali) > 40) add('wing40', canaliWing(c.canali) + ' canali: il WING ne gestisce 40.');
+    if ((mod === '2' || mod === '3') && (dl.distanza === null || dl.distanza === undefined)) add('distanza', 'Chiedi la distanza palco–regia, per ' + (mod === '2' ? 'il cavo AES50' : 'il multipolare') + '.');
+    if (mod === '3' && (dl.mixer === 'xr18' || dl.mixer === 'mr18')) {
+      n = lineeDaSplittare(c.canali).length;
+      if (n > 16) add('xr18', n + ' linee da splittare: il mixer del locale ha 16 ingressi microfonici più 2 solo linea (17-18)' + (n > 18 ? ' e non le prende tutte.' : ': sulle 17-18 vanno solo sorgenti di linea.'));
+    }
+    if (mod === '4' && !(c.monitor || []).length) add('service0mix', 'Service del locale senza mix monitor: scrivi i mix che chiediamo.');
+    if (mod === '4') { var rb = righeFornito(c.canali, '4'); if (rb.diversi) add('serviceMicBand', rb.diversi + ' righe con microfono o asta della band.', 'info'); }
+    if (mod.indexOf('1A') === 0) {
+      if (dl.impianto !== 'si' && !dl.impiantoNote) add('impianto1A', 'Chiedi che impianto hanno (casse, sub, dove ci colleghiamo).');
+      var k = conti1A(c);
+      if (mod === '1A-mixer' && dl.canaliLiberi !== null && dl.canaliLiberi !== undefined && k.canali > dl.canaliLiberi) add('canaliLiberi', 'Sul loro mixer servono ' + k.canali + ' canali liberi, ne hanno ' + dl.canaliLiberi + '.');
+      if (k.uscite > USCITE_WING) add('uscite', 'Servono ' + k.uscite + ' uscite: WING Rack e S16 ne hanno ' + USCITE_WING + '.');
+    }
+    if (mod === '1B') {
+      var ic = (c.palco && c.palco.icone) || [];
+      var casse = ic.some(function (o) { return o.tipo === 'cassaPa' || o.tipo === 'sub'; }), prese = ic.some(function (o) { return o.tipo === 'presa'; });
+      if (!casse || !prese) add('casse1B', 'Sullo stage plan mancano ' + [!casse ? 'le casse' : '', !prese ? 'le prese' : ''].filter(Boolean).join(' e ') + ': il locale deve sapere dove vanno.');
+    }
+    return out;
+  }
+  /** Numero per wa.me: solo cifre, prefisso internazionale; un cellulare italiano senza prefisso riceve il 39. */
+  function numeroWa(tel) {
+    var t = String(tel || '').trim(), d = t.replace(/\D/g, '');
+    if (d.indexOf('00') === 0) d = d.slice(2);
+    else if (t.charAt(0) !== '+' && /^3\d{8,9}$/.test(d)) d = '39' + d;
+    return d.length >= 6 ? d : '';
+  }
+  function dataBreve(d) { var m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? m[3] + '/' + m[2] + '/' + m[1] : String(d || ''); }
+  /**
+   * D4/D10: messaggio per il contatto del locale. o = { contenuto, serata {data, locale}, referente {nome, telefono},
+   * mittente {nome, referente: bool}, rev, tipo ('primaDomanda' per forzarla) }.
+   */
+  function messaggioTecnico(o) {
+    var c = o.contenuto, ser = o.serata || {}, ref = o.referente || {}, mitt = o.mittente || {}, rev = Number(o.rev) || 1;
+    var dl = c.locale || {}, mod = o.tipo === 'primaDomanda' ? '' : c.collegamento;
+    var primo = String(ref.nome || '').trim().split(/\s+/)[0];
+    var intro = mitt.referente ? 'Ciao, sono ' + (primo || mitt.nome) + ', referente tecnico dei Dish for a King.' : 'Ciao, sono ' + mitt.nome + ' dei Dish for a King.';
+    var chiusura = mitt.referente ? (ref.telefono ? 'Per qualsiasi dubbio chiamatemi al ' + ref.telefono + '.' : '')
+      : (ref.nome ? 'Per le domande tecniche: ' + ref.nome + ', referente tecnico' + (ref.telefono ? ', ' + ref.telefono : '') + '.' : '');
+    var quando = 'Per la serata ' + (ser.data ? 'del ' + dataBreve(ser.data) + ' ' : '');
+    var corpo, grazie = false;
+    if (mod === '2') {
+      corpo = quando + 'vi colleghiamo il nostro cavo AES50 (CAT-5e schermato, etherCON) a una porta AES50 libera del vostro mixer. Impostazioni da parte vostra: 48 kHz e sincronizzazione sulla porta AES50 a cui ci colleghiamo. Vi arrivano ' + lineeAes50(c.canali) + ' canali già amplificati, nello stesso ordine della lista allegata (canale 1 = canale 1). Il gain lo gestiamo noi dal palco e resta fermo dopo il line check: voi lavorate con il trim. Phantom gestito da noi. Se volete, ci rimandate il vostro Main L/R sulle uscite AES50 1-2 e lo registriamo.' + (dl.distanza === null || dl.distanza === undefined ? ' Ci serve sapere solo la distanza palco-regia per la lunghezza del cavo.' : '');
+    } else if (mod === '3') {
+      corpo = quando + 'ci serve uno splitter per ' + lineeDaSplittare(c.canali).length + ' canali sul palco, vicino al nostro rack. Uscita diretta verso di noi, uscita isolata verso il vostro multipolare. Il phantom lo diamo noi: tenete il 48 V spento su tutti i canali splittati. Se sentite ronzii, alzate il ground lift solo su quei canali. Il canale Click non va splittato. In allegato la lista canali numerata nell\'ordine del nostro mixer.';
+    } else if (mod === '4') {
+      corpo = quando + (ser.locale ? 'al ' + ser.locale + ' ' : '') + 'vi mando la nostra scheda tecnica (Rev. ' + rev + '): ' + lineeTutte(c.canali) + ' linee e ' + (c.monitor || []).length + ' mix monitor.' + (dl.mixer === 'wing' ? ' Se volete vi passiamo la scena del WING già pronta, con patch e nomi.' : '');
+      grazie = true;
+    } else if (mod === '1A-mixer') {
+      var k = conti1A(c);
+      var sub = dl.subAux === 'si' ? ', il sub mono' : dl.subAux === 'no' ? '' : ', il sub mono se il vostro sub è su un aux';
+      var spie = k.spie === 1 ? ' e 1 linea monitor già mixata per la vostra spia' : k.spie > 1 ? ' e ' + k.spie + ' linee monitor già mixate, una per ogni vostra spia' : '';
+      corpo = quando + 'portiamo il nostro mixer digitale e usiamo il vostro impianto, senza toccare i cavi delle vostre casse: entriamo nei canali del vostro mixer con Main L e R' + sub + spie + '. Ci servono ' + k.canali + ' canali liberi, a livello linea, con EQ piatta. Una presa vicino al palco. C\'è un limite di volume o un limitatore? In allegato lo stage plan con i dettagli.';
+    } else if (mod === '1A-impianto') {
+      corpo = quando + 'portiamo il nostro mixer e usiamo il vostro impianto. Ci servono: che casse e sub avete, dove possiamo collegarci con le nostre uscite XLR (sinistro, destro ed eventualmente sub su una linea a parte) e una presa vicino al palco. C\'è un limite di volume o un limitatore? In allegato lo stage plan.';
+    } else if (mod === '1B') {
+      var car = c.orari && c.orari.carico ? ' alle ' + c.orari.carico : '';
+      corpo = quando + 'portiamo tutto noi, impianto compreso. Ci servono: almeno due prese su linee separate vicino al palco, lo spazio ai lati del palco per casse e sub come nello stage plan allegato, e un accesso comodo per il carico' + car + '. C\'è un limite di volume o un limitatore?';
+    } else {
+      corpo = quando + 'portiamo per i monitor il nostro mixer digitale Behringer WING con stagebox. Che mixer avete in sala? Se è un WING, un X32 o un M32, vi passiamo tutti i canali con un solo cavo di rete AES50 e non serve nessuno splitter. Altrimenti vi chiediamo uno splitter analogico (meglio a trasformatore) per ' + lineeDaSplittare(c.canali).length + ' canali. Grazie!';
+    }
+    var agg = rev > 1 && mod ? 'Aggiornamento: Rev. ' + rev + ', sostituisce la Rev. ' + (rev - 1) + '. ' : '';
+    return agg + [intro, corpo, chiusura, grazie ? 'Grazie!' : ''].filter(Boolean).join(' ');
+  }
+  /** D5/D10: riquadro "Collegamento" della pagina 1 del foglio: titolo e cosa chiediamo al locale. Senza modalità: null. */
+  function righeCollegamento(c) {
+    var mod = c.collegamento, dl = c.locale || {};
+    var col = null;
+    COLLEGAMENTI.forEach(function (x) { if (x.id === mod) col = x; });
+    if (!col) return null;
+    var r = [], limite = 'Se c\'è un limite di volume o un limitatore, diteci quale.';
+    if (mod === '2') {
+      var n = lineeAes50(c.canali);
+      r.push('Una porta AES50 libera sul vostro mixer, a 48 kHz, sincronizzato sulla porta a cui ci colleghiamo.');
+      r.push('Linea N della channel list = canale N del vostro mixer (1–' + n + '); il Click non vi arriva.');
+      r.push('Gain e phantom dal nostro palco: voi lavorate con il trim.');
+      r.push(dl.distanza === null || dl.distanza === undefined ? 'Ci serve la distanza palco–regia per il cavo.' : 'Distanza palco–regia: ' + String(dl.distanza).replace('.', ',') + ' m.');
+    } else if (mod === '3') {
+      r.push('Uno splitter da ' + lineeDaSplittare(c.canali).length + ' canali (meglio a trasformatore) vicino al nostro rack: uscita diretta alla band, uscita isolata al vostro multipolare.');
+      r.push('Il 48 V lo diamo noi: sul vostro mixer resta spento su tutti i canali splittati.');
+      r.push('Ground lift solo sui canali che ronzano.');
+      r.push('Le righe con "Split: no" e il Click non vanno splittati.');
+    } else if (mod === '4') {
+      r.push('Rider completo nelle pagine seguenti: microfoni, aste e mix monitor.');
+    } else if (mod === '1A-mixer') {
+      var k = conti1A(c), spie = (c.monitor || []).filter(function (m) { return m.sulleSpieLocale; }).map(function (m) { return 'Spia ' + (m.chi || m.mix); });
+      r.push('Entriamo nei canali del vostro mixer, a livello linea, con EQ piatta e filtri spenti: non tocchiamo i cavi delle vostre casse.');
+      r.push('Linee: ' + ['Main L', 'Main R'].concat(k.sub ? ['Sub (solo verso l\'aux del sub)'] : []).concat(spie).join(' · ') + (spie.length ? ' (' + (spie.length === 1 ? 'solo verso l\'aux della sua spia' : 'ognuna solo verso l\'aux della sua spia') + ', pre-fader, fuori dal main).' : '.'));
+      r.push('Main L e R panpottati tutti a sinistra e tutti a destra, fader a 0 dB; aux master a 0 dB.');
+      r.push('Ci servono ' + k.canali + ' canali liberi e una presa vicino al rack.');
+      r.push(limite);
+    } else if (mod === '1A-impianto') {
+      r.push('Ci colleghiamo al vostro impianto con le nostre uscite XLR: sinistro, destro ed eventualmente sub su una linea a parte.');
+      r.push('Ci servono una presa vicino al rack e la distanza dal palco a finali o casse, per i cavi.');
+      r.push(limite);
+    } else if (mod === '1B') {
+      r.push('Portiamo impianto e mixer: casse e sub come nello stage plan.');
+      r.push('Almeno due prese su linee separate vicino al palco.');
+      r.push('Accesso comodo e tempo per carico e montaggio.');
+      r.push(limite);
+    }
+    return { titolo: col.foglio, righe: r };
+  }
+  /** D9: file per la Scheda Gig 1.13 (campi letti da "Carica"; effetti, PA e S16 restano quelli della Scheda Gig). */
+  var FAM_SCHEDA_GIG = { batteria: 'drums', basso: 'bass', chitarre: 'gtr', tastiere: 'keys', fiati: 'fiati', voci: 'vox', basi: 'trk', aux: 'aux' };
+  function sorgenteGig(c) {
+    if (c.click) return 'PLAYBACK';
+    if (/^DI$/i.test(c.mic)) return 'DI';
+    if (/modeller/i.test(c.mic)) return 'MODELLER';
+    if (/playback|basi/i.test(c.mic) || c.famiglia === 'basi') return 'PLAYBACK';
+    if (/^(linea|line)$/i.test(c.mic)) return 'LINE';
+    return 'MIC';
+  }
+  function esportaSchedaGig(c, ser) {
+    ser = ser || {};
+    var fam = {};
+    FAMIGLIE.forEach(function (f) { fam[FAM_SCHEDA_GIG[f.id]] = []; });
+    ordinaCanali(c.canali).forEach(function (x) {
+      fam[FAM_SCHEDA_GIG[x.famiglia]].push({ name: x.stereo ? nomeStereo(x.sorgente) : x.sorgente, src: sorgenteGig(x), st: x.stereo && !x.click, ph: x.phantom, click: x.click });
+    });
+    var monitors = (c.monitor || []).map(function (m) {
+      var chi = m.chi || m.mix;
+      if (m.sulleSpieLocale) return { name: 'Spia locale ' + chi, type: 'wedge', out: 'auto' };
+      if (m.tipo === 'IEM mono') return { name: 'IEM mono ' + chi, type: 'wedge', out: 'auto' };
+      return { name: chi, type: m.tipo === 'IEM stereo' ? 'iem' : 'wedge', out: 'auto' };
+    });
+    var note = c.note || '';
+    if (c.collegamento === '2') note = (note ? note + '\n' : '') + 'Uscite AES50 B 1–' + lineeAes50(c.canali) + ' verso il FOH: da patchare a mano';
+    return { schedaVersion: '1.13', gig: { name: 'Dish for a King', date: ser.data || '', venue: ser.locale || '' }, fam: fam, monitors: monitors, notes: note };
   }
 
   return {
@@ -1605,6 +1862,27 @@ var Regole = (function () {
     normalizzaReferente: normalizzaReferente,
     revisioneDopoModifica: revisioneDopoModifica,
     pieDiPagina: pieDiPagina,
+    MIXER_LOCALE: MIXER_LOCALE,
+    COLLEGAMENTI: COLLEGAMENTI,
+    RUOLI_CONTATTO: RUOLI_CONTATTO,
+    USCITE_WING: USCITE_WING,
+    normalizzaLocale: normalizzaLocale,
+    normalizzaDatiLocale: normalizzaDatiLocale,
+    suggerisciModalita: suggerisciModalita,
+    fornitoModalita: fornitoModalita,
+    righeFornito: righeFornito,
+    applicaFornito: applicaFornito,
+    lineeAes50: lineeAes50,
+    lineeDaSplittare: lineeDaSplittare,
+    lineeTutte: lineeTutte,
+    canaliWing: canaliWing,
+    conti1A: conti1A,
+    controlliScheda: controlliScheda,
+    numeroWa: numeroWa,
+    dataBreve: dataBreve,
+    messaggioTecnico: messaggioTecnico,
+    esportaSchedaGig: esportaSchedaGig,
+    righeCollegamento: righeCollegamento,
     TAPPA: TAPPA,
     MEMBRI: MEMBRI,
     ADMIN: ADMIN,
