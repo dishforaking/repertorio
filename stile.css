@@ -553,3 +553,33 @@ p.s-locale-stato { margin: 2px 0 10px; }
 p.s-locale-stato button.link { background: none; border: 0; padding: 0 4px; margin: 0; min-height: 0; text-decoration: underline; color: var(--testo); font-size: inherit; }
 .s-chip { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .s-chip button { margin: 0; }
+
+/* ===== T9-1: stato del brano ("In prova" solo nell'app, D2 A), novità dall'ultima visita ===== */
+.etichetta-stato { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .3px; padding: 1px 7px; border-radius: 9px; white-space: nowrap; align-self: center; }
+.etichetta-stato.in-prova { color: #f2c94c; border: 1px solid #f2c94c; }
+.etichetta-stato.definitivo { color: #000; background: var(--oro); }
+.stato-brano { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.stato-brano .etichetta-stato { font-size: 13px; padding: 3px 10px; }
+.stato-brano #btnStatoBrano { margin: 0; width: auto; padding: 6px 12px; }
+.stato-brano #notaDefinitivo { flex-basis: 100%; margin: 0; }
+#riquadroVisita { border-color: var(--oro); }
+#riquadroVisita #btnVisto { margin-top: 8px; }
+fieldset:disabled .sezioni { opacity: .9; }
+
+/* ===== T9-1: aiuto "?" sopra la schermata ===== */
+#testa .aiuto-tasto { font-weight: 800; font-size: 20px; margin-right: 6px; }
+.palco-testa .aiuto-tasto { width: auto; padding: 4px 12px; margin: 0; font-weight: 800; }
+.aiuto { position: fixed; inset: 0; z-index: 50; background: #080a10; overflow-y: auto; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
+.aiuto-barra { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(10px + env(safe-area-inset-top)) 0 10px; background: #080a10; border-bottom: 2px solid var(--oro); }
+.aiuto-barra b { color: var(--oro); font-size: 17px; }
+.aiuto-barra button { width: auto; margin: 0; padding: 6px 14px; }
+#aiutoCorpo h2 { color: var(--oro); font-size: 26px; margin: 14px 0 6px; }
+.aiuto-passi { padding-left: 22px; line-height: 1.45; font-size: 16px; }
+.aiuto-passi li { margin: 0 0 10px; }
+.aiuto-passi li.aiuto-admin::before { content: 'ADMIN · '; color: var(--oro); font-weight: 700; font-size: 12px; }
+.aiuto-passi li.aiuto-drum::before { content: 'DRUM · '; color: var(--oro); font-weight: 700; font-size: 12px; }
+.aiuto-indice { margin-top: 18px; border-top: 1px solid #333; padding-top: 10px; }
+.aiuto-indice summary { font-weight: 700; padding: 8px 0; cursor: pointer; }
+.aiuto-indice ul { list-style: none; padding: 0; margin: 0; }
+.aiuto-indice li button { text-align: left; padding: 9px 0; font-size: 16px; width: 100%; }
+@media print { .aiuto { display: none !important; } }

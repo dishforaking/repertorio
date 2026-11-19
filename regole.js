@@ -17,10 +17,11 @@
  *     messaggi ricevuti e vista calcolata da ogni telefono con il proprio orologio (corretto sul server).
  * T8-bis-1 (v11, correzioni del collaudo 17/11): aste nuove, asta da, riepilogo, nome stereo, note a elenco, ospitalità, posizione delle scritte.
  * T8-bis-1 (v10): scheda tecnica (famiglie, linee e coppie stereo, Click ultimo, monitor, stage plan, revisioni).
+ * T9-1 (v14): impronta del brano (Definitivo e ritorno a "Da ripassare"), aperture e novità (D1 C), set di DRUM in una riga sua.
  */
 var Regole = (function () {
-  var VERSIONE_REGOLE = 13;
-  var TAPPA = 8;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
+  var VERSIONE_REGOLE = 14;
+  var TAPPA = 9;   // le impostazioni con "dalla" successiva mostrano l'etichetta "attiva dalla Tx"
 
   /* Membri: sigle da mixer fisse. ADMIN non è un membro: non vota e non conta nei 5 sì. */
   var MEMBRI = [
@@ -1558,15 +1559,19 @@ var Regole = (function () {
       locale: s.locale ? normalizzaDatiLocale(s.locale) : null
     };
   }
-  /* Referente tecnico (uno solo, scritto dall'ADMIN): nome e telefono toccabile sul foglio. */
+  /* Referente tecnico (uno solo, scritto dall'ADMIN): nome e telefono toccabile sul foglio.
+     T9-1: il set della batteria non sta più qui (stava qui e "Salva" del referente lo cancellava): è nella riga di DRUM. */
   function normalizzaReferente(x) {
     x = x || {};
-    // mioSet (variante batteria): pezzi con posizione relativa al centro del set, in metri (da -3 a +3)
-    var set = (x.mioSet || []).slice(0, 30).filter(function (o) { return o && PEZZI_BATTERIA.indexOf(o.tipo) >= 0; }).map(function (o) {
+    return { nome: testoBreve(x.nome, 40), telefono: testoBreve(x.telefono, 20).replace(/[^0-9+ ]/g, '') };
+  }
+  /* T9-1 · Set della batteria di DRUM: pezzi con posizione relativa al centro del set, in metri (da -3 a +3), al massimo 30. */
+  function normalizzaSetDrum(x) {
+    var pezzi = x && Array.isArray(x.pezzi) ? x.pezzi : [];
+    return { pezzi: pezzi.filter(function (o) { return o && PEZZI_BATTERIA.indexOf(o.tipo) >= 0; }).slice(0, 30).map(function (o) {
       return { tipo: o.tipo, x: Math.round(limita(o.x, -3, 3) * 100) / 100, y: Math.round(limita(o.y, -3, 3) * 100) / 100,
         rot: ((Math.round(Number(o.rot) / 45) * 45) % 360 + 360) % 360 || 0, etichetta: testoBreve(o.etichetta, 30), canali: testoBreve(o.canali, 20) };
-    });
-    return { nome: testoBreve(x.nome, 40), telefono: testoBreve(x.telefono, 20).replace(/[^0-9+ ]/g, ''), mioSet: set };
+    }) };
   }
   /* Revisioni: {rev, data, inviata}. Una modifica dopo un invio apre la Rev successiva. */
   function revisioneDopoModifica(r, oggi) {
@@ -1884,7 +1889,107 @@ var Regole = (function () {
     return { schedaVersion: '1.13', gig: { name: 'Dish for a King', date: ser.data || '', venue: ser.locale || '' }, fam: fam, monitors: monitors, notes: note };
   }
 
+  /* ===================== T9-1 (v14): stato del brano e novità (progetto approvato il 19/11/2026) ===================== */
+  var STATI_BRANO_USATI = ['In prova', 'Definitivo'];
+  var CAMPI_IMPRONTA_BRANO = ['titolo', 'artista', 'tonalitaOriginale', 'scostamento', 'accordatura', 'bpm', 'riferimento', 'metro', 'durataManuale', 'note', 'feel'];
+  var CAMPI_IMPRONTA_SEZIONE = ['tipo', 'nome', 'ripetizioni', 'battute', 'bpm', 'metro', 'riferimento', 'feel', 'nota', 'chiSuona', 'testo'];
+  var VISITA_MINUTI = 30, VISITE_TENUTE = 3;
+  function campiTesto(o, campi) { return campi.map(function (c) { return o[c] === undefined || o[c] === null ? '' : String(o[c]); }); }
+  /** FNV-1a a 32 bit (solo per riconoscere un cambiamento, non per sicurezza). */
+  function fnv(str) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul ? Math.imul(h, 0x01000193) : (h * 0x01000193) | 0; }
+    return ('0000000' + (h >>> 0).toString(16)).slice(-8);
+  }
+  /**
+   * Impronta del contenuto di un brano: dati (senza stato), sezioni nella loro sequenza, testi.
+   * Uguale se il contenuto è uguale, anche dopo un cambio rimesso com'era o righe del foglio in altro ordine.
+   */
+  function improntaBrano(brano, sezioni, testi) {
+    var id = brano.id;
+    var sz = (sezioni || []).filter(function (x) { return x && x.brano === id; }).slice().sort(function (a, b) { return (Number(a.ordine) || 0) - (Number(b.ordine) || 0); });
+    var tx = (testi || []).filter(function (x) { return x && x.brano === id; }).slice().sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
+    return fnv(JSON.stringify([campiTesto(brano, CAMPI_IMPRONTA_BRANO),
+      sz.map(function (x) { return campiTesto(x, CAMPI_IMPRONTA_SEZIONE); }),
+      tx.map(function (x) { return [x.id].concat(campiTesto(x, ['etichetta', 'testo'])); })]));
+  }
+  var ORARIO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+  /** ultimaVisita del foglio (JSON con gli orari delle aperture) → lista; vuota se manca o è rovinata. */
+  function listaVisite(testo) {
+    var l;
+    try { l = JSON.parse(String(testo || '')); } catch (e) { return []; }
+    return Array.isArray(l) ? l.filter(function (t) { return typeof t === 'string' && ORARIO.test(t); }) : [];
+  }
+  function minutiTra(a, b) { return (Date.parse(b + 'Z') - Date.parse(a + 'Z')) / 60000; }
+  /**
+   * D1 C: un'apertura conta se sono passati almeno "minuti" dalla precedente; si tengono le "quante" aperture
+   * precedenti più quella corrente, così una novità resta visibile per "quante" aperture.
+   */
+  function registraApertura(lista, adesso, minuti, quante) {
+    lista = (lista || []).slice();
+    if (lista.length && minutiTra(lista[lista.length - 1], adesso) < minuti) return { lista: lista, cambiata: false };
+    lista.push(adesso);
+    while (lista.length > quante + 1) lista.shift();
+    return { lista: lista, cambiata: true };
+  }
+  function riferimentoNovita(lista) { return lista && lista.length ? lista[0] : ''; }
+  function sigla1(chi) { return String(chi || '').split(' ')[0]; }
+  /**
+   * Novità per "sigla" dopo l'orario "da": modifiche degli ALTRI a brani (dati, struttura, testi, stato, propri
+   * "Lo so" tornati "Da ripassare") e serate (dati o scaletta). Una voce per brano o serata, dalla più recente.
+   */
+  function novita(dati, sigla, da) {
+    if (!da) return [];
+    dati = dati || {};
+    var voci = {}, ordine = [];
+    function voce(tipo, id, titolo) {
+      if (!voci[id]) { voci[id] = { tipo: tipo, id: id, titolo: titolo, cosa: [], chi: [], quando: '' }; ordine.push(id); }
+      return voci[id];
+    }
+    function segna(v, cosa, chi, quando) {
+      if (v.cosa.indexOf(cosa) < 0) v.cosa.push(cosa);
+      if (chi && v.chi.indexOf(chi) < 0) v.chi.push(chi);
+      if (quando > v.quando) v.quando = quando;
+    }
+    function altri(chi, quando) { return quando > da && sigla1(chi) !== sigla; }
+    var brani = {}; (dati.brani || []).forEach(function (b) { brani[b.id] = b; });
+    var nuovi = {};
+    (dati.avvisi || []).forEach(function (a) {
+      if (a.tipo === 'nuovo brano' && brani[a.brano] && altri(a.apertoDa, String(a.apertoIl))) nuovi[a.brano] = a;
+    });
+    (dati.brani || []).forEach(function (b) {
+      var qb = String(b.modificatoIl || ''), qs = String(b.statoIl || '');
+      if (nuovi[b.id]) { segna(voce('brano', b.id, b.titolo), 'nuovo', sigla1(nuovi[b.id].apertoDa), String(nuovi[b.id].apertoIl)); return; }
+      if (qs && altri(b.statoDa, qs)) segna(voce('brano', b.id, b.titolo), b.stato === 'Definitivo' ? 'Definitivo' : 'In prova', sigla1(b.statoDa), qs);
+      if (altri(b.modificatoDa, qb) && qb !== qs) segna(voce('brano', b.id, b.titolo), 'modificato', sigla1(b.modificatoDa), qb);
+    });
+    (dati.sezioni || []).concat(dati.testi || []).forEach(function (x) {
+      var b = brani[x.brano], q = String(x.modificatoIl || '');
+      if (!b || nuovi[b.id] || !altri(x.modificatoDa, q)) return;
+      segna(voce('brano', b.id, b.titolo), 'modificato', sigla1(x.modificatoDa), q);
+    });
+    (dati.statiStudio || []).forEach(function (s) {
+      var b = brani[s.brano], q = String(s.cambiatoIl || '');
+      if (!b || s.membro !== sigla || s.stato !== 'Da ripassare' || !altri(s.modificatoDa, q)) return;
+      segna(voce('brano', b.id, b.titolo), 'da ripassare', sigla1(s.modificatoDa), q);
+    });
+    var serate = {}; (dati.serate || []).forEach(function (s) { serate[s.id] = s; });
+    function tSerata(s) { return [s.data, s.locale].filter(Boolean).join(' '); }
+    (dati.serate || []).forEach(function (s) {
+      var q = String(s.modificatoIl || '');
+      if (altri(s.modificatoDa, q)) segna(voce('serata', s.id, tSerata(s)), 'nuova o cambiata', sigla1(s.modificatoDa), q);
+    });
+    (dati.scalette || []).forEach(function (r) {
+      var s = serate[r.serata], q = String(r.modificatoIl || '');
+      if (s && altri(r.modificatoDa, q)) segna(voce('serata', s.id, tSerata(s)), 'nuova o cambiata', sigla1(r.modificatoDa), q);
+    });
+    return ordine.map(function (id) { return voci[id]; }).sort(function (a, b) { return a.quando < b.quando ? 1 : a.quando > b.quando ? -1 : 0; });
+  }
+
   return {
+    STATI_BRANO_USATI: STATI_BRANO_USATI, VISITA_MINUTI: VISITA_MINUTI, VISITE_TENUTE: VISITE_TENUTE,
+    improntaBrano: improntaBrano, listaVisite: listaVisite, registraApertura: registraApertura,
+    riferimentoNovita: riferimentoNovita, novita: novita, normalizzaSetDrum: normalizzaSetDrum,
     VERSIONE_REGOLE: VERSIONE_REGOLE,
     FAMIGLIE: FAMIGLIE,
     ASTE: ASTE,

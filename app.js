@@ -2,9 +2,9 @@
  * T6 Metronomo e schermo sempre acceso, T7 Serate, scaletta e stampa). */
 'use strict';
 
-const VERSIONE_INTERFACCIA = 9;   // Variante T8-bis-2: locale dalla rubrica, setup e collegamento nella serata (motore v9)
+const VERSIONE_INTERFACCIA = 10;  // T9-1: stato del brano solo ADMIN, novità dall'ultima visita, set di DRUM, aiuto (motore v10)
 const _VI_T7 = 5;   // il motore rifiuta interfacce più vecchie della sua minima
-const MOTORE_MINIMO = 9;          // l'app non scrive su motori più vecchi di questo (variante T8-bis-2: localeId nella serata)
+const MOTORE_MINIMO = 10;         // l'app non scrive su motori più vecchi di questo (T9-1: blocco del Definitivo e set di DRUM)
 const MOTORE = 'https://script.google.com/macros/s/AKfycbw2kaLgGlfxO5QIcmC1Ax9Ue8z7CBJNdcwpwr9oBsq_P2_MsS5YCIM-9tbfIhgWvWRIuw/exec';
 
 const $ = (id) => document.getElementById(id);
@@ -97,16 +97,19 @@ function aggiornaRete() {
   $('impostazioniSenzaRete').hidden = !fuori;
   const fs = $('moduloImpostazioni').querySelector('fieldset');
   if (fs) fs.disabled = fuori;
-  $('campiBrano').disabled = fuori || !io();
+  const blocco = branoBloccato();   // T9-1: un brano Definitivo si guarda e basta
+  $('campiBrano').disabled = fuori || !io() || blocco;
   $('btnNuovo').disabled = fuori;
+  $('btnStatoBrano').disabled = fuori;
+  $('btnVisto').disabled = fuori;
   document.querySelectorAll('#mioStato button').forEach((b) => { b.disabled = fuori; });
   $('btnElimina').disabled = fuori;
   // T3: senza rete (o con la sola chiave ADMIN) la struttura si guarda e basta
-  $('campiStruttura').disabled = fuori || !io();
-  $('btnSezione').disabled = fuori || !io() || !branoSalvato();
-  if (ordinatore) ordinatore.option('disabled', fuori || !io());
+  $('campiStruttura').disabled = fuori || !io() || blocco;
+  $('btnSezione').disabled = fuori || !io() || !branoSalvato() || blocco;
+  if (ordinatore) ordinatore.option('disabled', fuori || !io() || blocco);
   // T5: testi e bacheca
-  $('btnTesto').disabled = fuori || !io() || !branoSalvato();
+  $('btnTesto').disabled = fuori || !io() || !branoSalvato() || blocco;
   $('btnConferma').disabled = fuori;
   document.querySelectorAll('button.sistemato').forEach((b) => { b.disabled = fuori; });
   // T7: serate e scaletta (senza rete si leggono e si stampano)
@@ -192,6 +195,7 @@ function disegna() {
   if (r && me && !moduloImpostazioniOccupato()) disegnaImpostazioni(r.impostazioni);
   disegnaRepertorio();
   disegnaBacheca();
+  disegnaVisita();   // T9-1
   disegnaSerate();
   if (window.Scheda) Scheda.ridisegna();   // T8-bis-1
   if (window.Locali) Locali.ridisegna();   // T8-bis-2
@@ -295,7 +299,9 @@ function disegnaElenco(elenco, stati, me) {
   elenco.forEach((b) => {
     const t = tonalitaDi(b);
     const li = el('li'); const btn = el('button', 'brano'); btn.type = 'button'; btn.dataset.id = b.id;
-    const r1 = el('div', 'r1'); r1.append(el('b', 'titolo', b.titolo), el('span', 'ton', t.testo));
+    const r1 = el('div', 'r1'); r1.append(el('b', 'titolo', b.titolo));
+    if (b.stato !== 'Definitivo') r1.append(el('span', 'etichetta-stato in-prova', 'In prova'));   // T9-1 (D2 A): solo nell'app
+    r1.append(el('span', 'ton', t.testo));
     const r2 = el('div', 'r2');
     r2.append(el('span', 'artista', b.artista || ' '));
     const det = [];
@@ -410,6 +416,7 @@ function apriBrano(id, daRidisegno) {
   caricaStruttura(branoAperto.id);
   $('riquadroElimina').hidden = !stato.admin || !b;
   delete $('btnElimina').dataset.conferma; $('btnElimina').textContent = 'Elimina brano'; $('btnElimina').className = 'pericolo';
+  disegnaStatoBrano();
   if (!daRidisegno || $('vBrano').hidden) vai('vBrano'); else aggiornaRete();
   if (!b) $('bTitolo').focus();
 }
@@ -489,7 +496,7 @@ async function salvaBrano(tentativo) {
     const j = await chiama('salvaBrano', { brano: dati, versione: branoAperto && branoAperto.id === id && branoAperto.versione ? branoAperto.versione : undefined });
     if (!j.ok) {
       statoSalva('non salvato', 'errore');
-      mostra('esitoBrano', 'Non salvato: ' + (j.campi ? j.campi.map(nomeCampo).join(', ') : j.errore), true);
+      mostra('esitoBrano', 'Non salvato: ' + (j.campi ? j.campi.map(nomeCampo).join(', ') : erroreSalvataggio(j)), true);
       return;
     }
     const lista = brani();
@@ -629,6 +636,82 @@ async function cambiaStato(nuovo) {
   if (branoAperto && branoAperto.id === id) disegnaStatiBrano();
   disegnaRepertorio();
 }
+
+/* ---------- T9-1 · Stato del brano (solo ADMIN) ---------- */
+function branoBloccato() { return !!branoAperto && branoAperto.stato === 'Definitivo'; }
+const TESTO_DEFINITIVO = 'Il brano è Definitivo: per cambiarlo chiedi all\'ADMIN di riportarlo In prova.';
+/** Messaggio di un salvataggio rifiutato (T9-1: "definitivo" in chiaro). */
+function erroreSalvataggio(j) { return j.errore === 'definitivo' ? TESTO_DEFINITIVO : j.errore; }
+function disegnaStatoBrano() {
+  const b = branoAperto, salvato = !!b && brani().some((x) => x.id === b.id);
+  $('testaStatoBrano').hidden = !salvato;
+  if (!salvato) return;
+  const def = b.stato === 'Definitivo';
+  const et = $('etichettaStato'); et.textContent = def ? 'Definitivo' : 'In prova'; et.className = 'etichetta-stato ' + (def ? 'definitivo' : 'in-prova');
+  $('notaDefinitivo').hidden = !def;
+  const bt = $('btnStatoBrano'); bt.hidden = !stato.admin;
+  delete bt.dataset.conferma; bt.className = 'secondario';
+  bt.dataset.testo = bt.textContent = def ? 'Riporta In prova' : 'Segna Definitivo';
+}
+/** Solo ADMIN, doppio tocco: alla richiusura il motore rimette "Da ripassare" i "Lo so" se il brano è cambiato. */
+$('btnStatoBrano').addEventListener('click', () => chiediConferma($('btnStatoBrano'), async () => {
+  if (!puoScrivere('esitoBrano') || !branoAperto) return;
+  const id = branoAperto.id, nuovo = branoAperto.stato === 'Definitivo' ? 'In prova' : 'Definitivo';
+  statoSalva('salvataggio…');
+  try {
+    const j = await chiama('statoBrano', { brano: id, stato: nuovo });
+    if (!j.ok) { statoSalva('non salvato', 'errore'); disegnaStatoBrano(); return mostra('esitoBrano', 'Stato non cambiato: ' + j.errore, true); }
+    const lista = brani(), i = lista.findIndex((x) => x.id === id);
+    if (i >= 0) lista[i] = j.brano;
+    const st = statiStudio();
+    (j.stati || []).forEach((s) => { const k = st.findIndex((x) => x.id === s.id); if (k >= 0) st[k] = s; else st.push(s); });
+    salvaCopia();
+    if (branoAperto && branoAperto.id === id) Object.assign(branoAperto, j.brano);
+    statoSalva('salvato ✓', 'salvato');
+    disegnaStatoBrano(); disegnaStatiBrano(); aggiornaAnteprima(); disegnaRepertorio(); aggiornaRete();
+    mostra('esitoBrano', nuovo === 'Definitivo'
+      ? 'Segnato Definitivo.' + (j.ripassati ? ' Il brano era cambiato: ' + j.ripassati + (j.ripassati === 1 ? ' "Lo so" è tornato' : ' "Lo so" sono tornati') + ' "Da ripassare".' : '')
+      : 'Riportato In prova: ora tutti possono modificarlo.');
+  } catch (e) { statoSalva('non salvato', 'errore'); disegnaStatoBrano(); mostra('esitoBrano', 'Stato non cambiato: ' + e.message, true); }
+}));
+
+/* ---------- T9-1 · Novità dall'ultima visita (D1 C) ---------- */
+function disegnaVisita() {
+  const box = $('riquadroVisita'), ul = $('listaVisita'); if (!box) return;
+  ul.textContent = '';
+  const r = risposta(), me = io();
+  const voci = r && me ? Regole.novita(r, me.sigla, r.novitaDa || '') : [];
+  box.hidden = !voci.length;
+  const NOMI = { nuovo: 'nuovo brano', modificato: 'modificato', Definitivo: 'ora Definitivo', 'In prova': 'riportato In prova', 'da ripassare': 'il tuo "Lo so" è tornato "Da ripassare"', 'nuova o cambiata': 'serata nuova o cambiata' };
+  voci.slice(0, 20).forEach((v) => {
+    const li = el('li'); const btn = el('button', 'apri'); btn.type = 'button'; btn.dataset.id = v.id;
+    const se = v.tipo === 'serata' ? serateTutte().find((x) => x.id === v.id) : null;
+    const titolo = se ? [se.data ? Regole.scriviData(se.data, true) : '', se.locale].filter(Boolean).join(' · ') || 'Serata' : v.titolo;
+    btn.append(el('b', '', titolo), el('span', 'cosa', v.cosa.map((c) => NOMI[c] || c).join(' · ') + ' — da ' + v.chi.join(', ') + ' · ' + ora(v.quando)));
+    btn.addEventListener('click', () => (v.tipo === 'serata' ? apriSerata(v.id) : apriBrano(v.id)));
+    li.append(btn); ul.append(li);
+  });
+  if (voci.length > 20) ul.append(el('li', 'tenue piccolo', 'e altre ' + (voci.length - 20) + '…'));
+}
+$('btnVisto').addEventListener('click', async () => {
+  if (!puoScrivere('avvisoCodice')) return;
+  try {
+    const j = await chiama('visto');
+    if (!j.ok) return statoSalva('non salvato', 'errore');
+    const r = risposta(); r.novitaDa = j.ultimaVisita[0]; if (r.io) r.io.ultimaVisita = j.ultimaVisita;
+    salvaCopia(); disegnaVisita();
+  } catch (e) { statoSalva('non salvato', 'errore'); }
+});
+
+/* ---------- T9-1 · Aiuto "?" (scelta C): l'aiuto della schermata corrente, sopra la schermata ---------- */
+function vistaCorrente() {
+  const v = [...document.querySelectorAll('.vista')].find((x) => !x.hidden);
+  const id = v ? v.id : 'vInizio';
+  return id === 'vScheda' && window.Scheda && Scheda._stato() && Scheda._stato().tipo === 'setDrum' ? 'setDrum' : id;
+}
+function apriAiuto() { if (window.Aiuto) Aiuto.apri(vistaCorrente(), { admin: !!stato.admin, drum: !!(io() && io().sigla === 'DRUM') }); }
+$('btnAiuto').addEventListener('click', apriAiuto);
+$('btnAiutoPalco').addEventListener('click', apriAiuto);
 
 /* Elimina brano: solo ADMIN, doppio tocco. */
 $('btnElimina').addEventListener('click', () => chiediConferma($('btnElimina'), async () => {
@@ -991,7 +1074,7 @@ async function salvaStruttura(tentativo) {
     const j = await chiama('salvaStruttura', { brano: branoId, sezioni: lista, conosciute });
     if (!j.ok) {
       statoSalva('non salvato', 'errore');
-      mostra('esitoStruttura', 'Struttura non salvata: ' + (j.sezioni ? j.sezioni.map((e) => e.campi.map(nomeCampoSezione).join(', ')).join('; ') : j.errore), true);
+      mostra('esitoStruttura', 'Struttura non salvata: ' + (j.sezioni ? j.sezioni.map((e) => e.campi.map(nomeCampoSezione).join(', ')).join('; ') : erroreSalvataggio(j)), true);
       return;
     }
     const r = risposta();
@@ -1078,7 +1161,7 @@ async function salvaTestoSingolo(tentativo) {
   testoInCorso = true;
   try {
     const j = await chiama('salvaTesti', { brano: d.brano, testi: [{ id: d.id, etichetta: '', testo: d.testo, versione: t && t.versione ? t.versione : undefined }], collegamenti: d.sezione ? [{ sezione: d.sezione, testo: d.id }] : [] });
-    if (!j.ok) { statoSalva('non salvato', 'errore'); mostra('esitoStruttura', 'Testo non salvato: ' + j.errore, true); return; }
+    if (!j.ok) { statoSalva('non salvato', 'errore'); mostra('esitoStruttura', 'Testo non salvato: ' + erroreSalvataggio(j), true); return; }
     applicaRispostaTesti(j);
     statoSalva('salvato ✓', 'salvato');
     if (j.avvisoTesti) mostra('esitoStruttura', 'Attenzione: ' + j.avvisoTesti.modificatoDa + ' aveva modificato questo testo il ' + dataOra(j.avvisoTesti.modificatoIl) + '. Hai salvato la tua versione: controllate insieme.', true);
@@ -1102,7 +1185,7 @@ async function salvaCollegamenti(dati, ok) {
   statoSalva('salvataggio…');
   try {
     const j = await chiama('salvaTesti', Object.assign({ brano: struttura.brano }, dati));
-    if (!j.ok) { statoSalva('non salvato', 'errore'); return mostra('esitoStruttura', 'Non salvato: ' + j.errore, true); }
+    if (!j.ok) { statoSalva('non salvato', 'errore'); return mostra('esitoStruttura', 'Non salvato: ' + erroreSalvataggio(j), true); }
     applicaRispostaTesti(j);
     statoSalva('salvato ✓', 'salvato');
     if (ok) mostra('esitoStruttura', ok);
@@ -1370,7 +1453,7 @@ $('btnConferma').addEventListener('click', async () => {
   $('btnConferma').disabled = true; statoSalva('salvataggio…'); mostra('esitoControllo', 'Salvo il testo…');
   try {
     const j = await chiama('salvaTesti', dati);
-    if (!j.ok) { statoSalva('non salvato', 'errore'); $('btnConferma').disabled = false; return mostra('esitoControllo', 'Non salvato: ' + j.errore, true); }
+    if (!j.ok) { statoSalva('non salvato', 'errore'); $('btnConferma').disabled = false; return mostra('esitoControllo', 'Non salvato: ' + erroreSalvataggio(j), true); }
     applicaRispostaTesti(j);
     statoSalva('salvato ✓', 'salvato');
     const brano = ins.brano; ins = null;
@@ -2218,6 +2301,7 @@ function riempiCorpoRiga(corpo, x, info, rp, ctx) {
   if (x.tipo === 'brano') {
     const b = ctx.perId[x.brano];
     r1.append(el('span', 'num', info.numero + ''), el('span', 'titolo', b ? b.titolo : '(brano tolto)'));
+    if (b && b.stato !== 'Definitivo') r1.append(el('span', 'etichetta-stato in-prova', 'In prova'));   // T9-1 (D2 A): nell'app, non sul foglio
     const det = el('span', 'det');
     if (b) {
       const t = tonalitaDi(b), d = Regole.durataEffettiva(b, ctx.sez.filter((s) => s.brano === b.id));

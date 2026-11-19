@@ -1,7 +1,7 @@
 /* DFAK – Repertorio: memoria offline e numero di versione dell'app.
  * Per pubblicare una nuova versione si cambia VERSIONE (e si caricano i file cambiati).
  * Tutto ciò che si salva usa il prefisso "dfak-" e vale solo per la cartella /repertorio/. */
-const VERSIONE = '17';
+const VERSIONE = '18';
 const PREFISSO = 'dfak-repertorio-';
 const CACHE = PREFISSO + 'v' + VERSIONE;
 const FILE = [
@@ -14,6 +14,7 @@ const FILE = [
   'scheda.js',                            // T8-bis-1: scheda tecnica, stage plan e foglio
   'locali.js',                            // T8-bis-2: rubrica dei locali
   'sync.js',                              // T8-sync: canale del palco sincronizzato (caricato solo nel palco)
+  'aiuto.js',                             // T9-1: aiuto "?" per ogni schermata, anche senza rete
   'lib/Sortable.min.js',
   'manifest.webmanifest',
   'icone/icona-192.png',

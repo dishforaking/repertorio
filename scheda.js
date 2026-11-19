@@ -37,7 +37,11 @@
   const indice = () => { const r = risposta(); return (r && r.schedeIndice) || []; };
   const setupTutti = () => schedeTutte().filter((k) => k.tipo === 'setup').sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'it'));
   const referente = () => { const k = schedeTutte().find((x) => x.tipo === 'referente'); return k ? k.contenuto : { nome: '', telefono: '' }; };
-  const puoModificare = () => stato.admin && !senzaRete();
+  // T9-1: il set della batteria è di DRUM (riga sua); l'editor "Il mio set" è la scheda in "modo set"
+  const setDrum = () => { const k = schedeTutte().find((x) => x.tipo === 'setDrum'); return k ? k.contenuto.pezzi || [] : []; };
+  const sonoDrum = () => { const me = io(); return !!me && me.sigla === 'DRUM'; };
+  const modoSet = () => !!sk && sk.tipo === 'setDrum';
+  const puoModificare = () => (modoSet() ? sonoDrum() : stato.admin) && !senzaRete();
   const copia = (o) => JSON.parse(JSON.stringify(o));
   const idInterno = (p) => p + nuovoIdBrano().slice(1, 10);
 
@@ -56,6 +60,7 @@
     $('btnNuovoSetup').hidden = !stato.admin;
     $('btnNuovoSetup').disabled = senzaRete();
     $('btnReferente').hidden = !stato.admin;
+    $('btnMioSet').hidden = !sonoDrum();   // T9-1: solo DRUM, con o senza chiave ADMIN
     aggiornaSerata();
   }
 
@@ -157,6 +162,18 @@
     if (!k) return vai('vSerate');
     apriOggetto(k);
   }
+  /** T9-1 · "Il mio set di batteria" (solo DRUM): palco di 3 × 3 m con i soli pezzi, partendo dal set salvato o da quello di partenza. */
+  function apriSetDrum() {
+    const pezzi = setDrum().length ? setDrum() : R.SET_PARTENZA;
+    const palco = { larghezza: 3, profondita: 3, icone: pezzi.map((q) => Object.assign({}, q, { id: idInterno('i'), x: 1.5 + q.x, y: 1.5 + q.y })) };
+    setupPerSerata = null;
+    sk = { id: 'ksetdrum', tipo: 'setDrum', nome: 'Il mio set di batteria', versione: 0, contenuto: R.normalizzaScheda({ palco }) };
+    memoria.del('schedaAperta');   // (non ovvio) non si riapre da sola: la riga del set non è una scheda tecnica
+    canaleAperto = null; iconaScelta = null; zoom = 1; vista = null;
+    riempi();
+    vai('vScheda');
+    mostra('esitoK', setDrum().length ? 'Il tuo set salvato: ' + setDrum().length + ' pezzi.' : 'Set di partenza (destro): sistemalo e tocca "Salva il mio set".');
+  }
   function apriOggetto(k) {
     setupPerSerata = null;
     sk = copia(k);
@@ -169,13 +186,14 @@
   const nomeSetup = (n) => (/^setup\b/i.test(String(n || '').trim()) ? String(n).trim() : 'Setup ' + (n || ''));
   function serataDi(k) { return k && k.tipo === 'serata' ? serateTutte().find((s) => s.id === k.proprietario) || null : null; }
   function titolo() {
+    if (modoSet()) return 'Il mio set di batteria';
     if (sk.tipo === 'setup') return nomeSetup(sk.nome);
     const s = serataDi(sk);
     return 'Scheda tecnica' + (s ? ' · ' + dataSerata(s, true) + (s.locale ? ' · ' + s.locale : '') : '');
   }
   function riempi() {
     $('kTitolo').textContent = titolo();
-    $('kIndietro').textContent = sk.tipo === 'setup' && !setupPerSerata ? '◀ Serate' : '◀ Serata';
+    $('kIndietro').textContent = (sk.tipo === 'setup' && !setupPerSerata) || sk.tipo === 'setDrum' ? '◀ Serate' : '◀ Serata';
     const vuota = sk.tipo === 'serata' && !sk.versione;
     $('kCopia').hidden = !(sk.tipo === 'serata' && stato.admin);
     $('kCopiaTesto').textContent = vuota ? 'Questa serata non ha ancora una scheda: scegli il setup da cui partire.' : 'Riparti da un setup (la scheda torna l\'ideale; dopo un invio diventa una nuova revisione).';
@@ -197,8 +215,15 @@
     $('kElimina').hidden = !(stato.admin && sk.tipo === 'setup' && sk.versione);
     $('kBtnDuplica').hidden = !(stato.admin && sk.tipo === 'setup' && sk.versione);
     $('kSolaLettura').hidden = stato.admin;
+    // T9-1: in "modo set" solo lo stage plan con i pezzi della batteria
+    const ms = modoSet();
+    $('kSchede').hidden = ms; $('kAzioni').hidden = ms; $('kTavolozza').hidden = ms;
+    $('kLargh').closest('.riga-campi').hidden = ms;
+    $('kBtnMettiSet').hidden = ms; $('kSetInfo').hidden = !ms;
+    if (ms) { $('kSolaLettura').hidden = true; $('kCopia').hidden = true; $('kElimina').hidden = true; $('kBtnEsporta').hidden = true; }
+    $('kTavBatteria').querySelectorAll('button[data-tipo="pedana"]').forEach((b) => { b.hidden = ms; });
     mostra('esitoK', '');
-    mostraScheda(scheda);
+    mostraScheda(ms ? 'palco' : scheda);
     aggiornaAbilitati();
   }
   function aggiornaAbilitati() {
@@ -236,6 +261,7 @@
   }
   function cambio() {
     if (!puoModificare() || !sk) return;
+    if (modoSet()) { mostra('esitoK', 'Modifiche da salvare: tocca "Salva il mio set".'); return; }   // T9-1: si salva solo col tasto
     if (sk.tipo === 'serata' && !sk.versione) return;     // prima si crea dalla scelta del setup
     if (sk.tipo === 'setup' && !String(sk.nome || '').trim()) { $('kNome').classList.add('invalido'); return; }
     $('kNome').classList.remove('invalido');
@@ -474,7 +500,13 @@
       g.append(s('circle', Object.assign({ cx: 0, cy: 0, r: 16 }, tratto)), s('circle', { cx: 0, cy: 0, r: 6, fill: '#000' }),
         s('line', { x1: 0, y1: 0, x2: 0, y2: 22, stroke: '#000', 'stroke-width': 3 }));
     } else if (tipo === 'wedge') {
-      g.append(s('polygon', Object.assign({ points: [x + 8, y, x + w - 8, y, x + w, y + h, x, y + h].join(' ') }, tratto, { 'stroke-width': 3 })), s('line', { x1: x + 4, x2: x + w - 4, y1: y + h * .6, y2: y + h * .6, stroke: '#000', 'stroke-width': 1.5 }));
+      // T9-1 (stile D, scelta di Francesco 19/11): trapezio con il lato largo e due onde ravvicinate verso il musicista
+      const T = y + 17, onda = (a, b, c) => s('path', { d: 'M' + (-a) + ',' + (T - b) + ' Q0,' + (T - c) + ' ' + a + ',' + (T - b), fill: 'none', stroke: '#000', 'stroke-width': 2.2, 'stroke-linecap': 'round' });
+      g.append(s('polygon', Object.assign({ points: [x, T, x + w, T, x + w - 7, y + h, x + 7, y + h].join(' ') }, tratto, { 'stroke-width': 3, 'stroke-linejoin': 'round' })),
+        onda(12.7, 4.6, 10.4), onda(19.6, 9.2, 18.4));
+      // sigla del mix (MX1…) dentro, sempre dritta anche se l'icona è ruotata
+      const mx = ped && /^(MX\d{1,2})\b/i.exec(String(ped.etichetta || ''));
+      if (mx) g.append(testoSvg(0, (T + y + h) / 2, mx[1].toUpperCase(), 11, { transform: 'rotate(' + (-(ped.rot || 0)) + ' 0 ' + (T + y + h) / 2 + ')' }));
     } else if (tipo === 'centralinaIem') {
       g.append(box(), s('line', { x1: x + 6, y1: y, x2: x - 2, y2: y - 14, stroke: '#000', 'stroke-width': 2.5 }), s('line', { x1: x + w - 6, y1: y, x2: x + w + 2, y2: y - 14, stroke: '#000', 'stroke-width': 2.5 }), testoSvg(0, 0, 'IEM', 12));
     } else if (tipo === 'cassaPa') {
@@ -483,8 +515,11 @@
     } else if (tipo === 'sub') {
       g.append(box({ 'stroke-width': 3 }), s('circle', Object.assign({ cx: 0, cy: 0, r: h / 2 - 7 }, tratto, { 'stroke-width': 2 })), s('rect', { x: x - 1, y: y + h - 6, width: w + 2, height: 6, fill: '#000' }), testoSvg(0, 0, 'SUB', 12));
     } else if (tipo === 'presa') {
-      g.append(s('circle', Object.assign({ cx: 0, cy: 0, r: 15 }, tratto, { 'stroke-width': 2.5 })), s('circle', { cx: -5, cy: 0, r: 2.6, fill: '#000' }), s('circle', { cx: 5, cy: 0, r: 2.6, fill: '#000' }));
-      g.append(testoSvg(17, -15, '×' + (prese || 1), 13, { 'text-anchor': 'start' }));
+      // T9-1 (stile D, scelta di Francesco 19/11): targhetta "230V" con fulmine, angoli poco smussati, "×n" accanto
+      g.append(s('rect', { x: -20, y: -9, width: 40, height: 18, rx: 3, fill: '#000' }),
+        s('path', { d: 'M-10.8,-5.8 L-15,0.8 L-11.7,0.8 L-13.3,5.8 L-9.2,-0.8 L-12.5,-0.8 Z', fill: '#fff' }),
+        testoSvg(4.2, 0.5, '230V', 10, { fill: '#fff' }));
+      g.append(testoSvg(22, -12, '×' + (prese || 1), 13, { 'text-anchor': 'start' }));
     } else {
       const sigla = { di: 'DI', stagebox: 'S16', rackWing: 'WING', splitter: 'SPLIT' }[tipo] || '?';
       g.append(box({ 'stroke-width': tipo === 'di' ? 2 : 3 }), testoSvg(0, 0, sigla, tipo === 'di' ? 10 : 12));
@@ -551,7 +586,7 @@
       $('kIcGruppoRiga').hidden = !o.gruppo;
       if (!o.gruppo) $('kIcGruppo').checked = false;
     }
-    $('kBtnSalvaSet').hidden = !stato.admin || !p.icone.some((x) => x.gruppo === 'batteria');
+    $('kBtnSalvaSet').hidden = !modoSet();   // T9-1: lo salva solo DRUM, dal suo editor
   }
   function puntoSvg(e) {
     const svg = $('kSvg'), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
@@ -682,27 +717,27 @@
     iconaScelta = o.id;
     disegnaPalcoEditor(); cambio();
   }
-  /** "Metti il mio set": i pezzi salvati da Francesco (o il set di partenza) attorno al centro del palco. */
+  /** T9-1 · "Metti il set di DRUM" (ADMIN, stage plan): i pezzi salvati da DRUM, o il set di partenza, attorno al centro del palco. */
   function mettiSet() {
-    const p = sk.contenuto.palco, ref = referente();
-    const set = ref.mioSet && ref.mioSet.length ? ref.mioSet : R.SET_PARTENZA;
+    const p = sk.contenuto.palco, suo = setDrum();
+    const set = suo.length ? suo : R.SET_PARTENZA;
     const cx = p.larghezza / 2, cy = Math.min(p.profondita - 1, Math.max(1, p.profondita * 0.35));
     set.forEach((q) => p.icone.push(R.normalizzaIcona(Object.assign({}, q, { id: idInterno('i'), x: cx + q.x, y: cy + q.y }), p)));
     iconaScelta = null; disegnaPalcoEditor(); cambio();
-    mostra('esitoK', (ref.mioSet && ref.mioSet.length ? 'Il tuo set' : 'Set di partenza (destro)') + ': ' + set.length + ' pezzi. Per spostarli tutti insieme scegli un pezzo e accendi "Sposta tutta la batteria".');
+    mostra('esitoK', (suo.length ? 'Set di DRUM' : 'Set di partenza: DRUM non ha ancora salvato il suo') + ' (' + set.length + ' pezzi). Per spostarli tutti insieme scegli un pezzo e accendi "Sposta tutta la batteria".');
   }
-  /** "Salva come mio set": posizioni dei pezzi relative al centro del loro ingombro, nella riga del referente. */
+  /** T9-1 · "Salva il mio set" (solo DRUM): posizioni relative al centro dei pezzi, nella riga del set di DRUM. */
   async function salvaSet() {
+    if (!modoSet()) return;
     const pezzi = sk.contenuto.palco.icone.filter((x) => x.gruppo === 'batteria');
-    if (!pezzi.length) return;
+    if (!pezzi.length) return mostra('esitoK', 'Nessun pezzo da salvare.', true);
     const xs = pezzi.map((q) => q.x), ys = pezzi.map((q) => q.y);
     // centro arrotondato a 5 cm: così le posizioni relative restano sulla griglia dei pezzi e il set rimesso è identico
     const c5 = (v) => Math.round(v / R.AGGANCIO_FINE) * R.AGGANCIO_FINE;
     const cx = c5((Math.min(...xs) + Math.max(...xs)) / 2), cy = c5((Math.min(...ys) + Math.max(...ys)) / 2);
-    const ref = referente();
-    const mioSet = pezzi.map((q) => ({ tipo: q.tipo, x: Math.round((q.x - cx) * 100) / 100, y: Math.round((q.y - cy) * 100) / 100, rot: q.rot, etichetta: q.etichetta, canali: q.canali }));
-    const j = await azione('salvaScheda', { scheda: { tipo: 'referente', contenuto: { nome: ref.nome, telefono: ref.telefono, mioSet } } }, 'esitoK');
-    if (j) { ricevi(j.scheda); mostra('esitoK', 'Salvato come tuo set: ' + mioSet.length + ' pezzi. "Metti il mio set" ora li dispone così.'); }
+    const set = { pezzi: pezzi.map((q) => ({ tipo: q.tipo, x: Math.round((q.x - cx) * 100) / 100, y: Math.round((q.y - cy) * 100) / 100, rot: q.rot, etichetta: q.etichetta, canali: q.canali })) };
+    const j = await azione('salvaSetDrum', { set }, 'esitoK');
+    if (j) { ricevi(j.scheda); mostra('esitoK', 'Salvato il tuo set: ' + set.pezzi.length + ' pezzi. L\'amministratore lo mette con "Metti il set di DRUM".'); }
   }
   function iconaCorrente() { return sk.contenuto.palco.icone.find((x) => x.id === iconaScelta); }
 
@@ -994,6 +1029,7 @@
       if (j) { ricevi(j.scheda); $('boxReferente').hidden = true; mostra('esitoSerate', 'Referente salvato.'); }
     });
     $('btnSchedaTecnica').addEventListener('click', apriDellaSerata);
+    $('btnMioSet').addEventListener('click', apriSetDrum);
     $('kIndietro').addEventListener('click', async () => {
       if (timer) { clearTimeout(timer); timer = null; await salva(); }
       const k = sk, perSerata = setupPerSerata; sk = null; setupPerSerata = null; memoria.del('schedaAperta');
@@ -1126,7 +1162,7 @@
   /* ---------- Ridisegno quando arrivano dati nuovi (chiamato da disegna() in app.js) ---------- */
   function ridisegna() {
     disegnaSetup();
-    if ($('vScheda').hidden || !sk || occupata()) { aggiornaAbilitati(); return; }
+    if ($('vScheda').hidden || !sk || occupata() || modoSet()) { aggiornaAbilitati(); return; }   // T9-1: il set non si ricarica sotto le dita
     const k = schedeTutte().find((x) => x.id === sk.id);
     if (k && k.versione !== sk.versione) { sk = copia(k); riempi(); }
   }

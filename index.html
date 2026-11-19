@@ -15,6 +15,7 @@
   <div class="riga">
     <img class="scritta" src="logo/logo-dish-scuro-scritta.svg" alt="Dish for a King">
     <div class="chi"><b id="chiSigla"></b><small id="statoSalva"></small></div>
+    <button type="button" id="btnAiuto" class="ingranaggio aiuto-tasto" aria-label="Aiuto di questa schermata" title="Aiuto">?</button>
     <button type="button" id="btnImpostazioni" class="ingranaggio" data-vista="vImpostazioni" aria-label="Impostazioni" title="Impostazioni">⚙</button>
   </div>
   <div id="avvisoRete" class="avviso" hidden></div>
@@ -24,11 +25,20 @@
   <p id="avvisoSchermo" class="avviso-piccolo" hidden>Lo schermo potrebbe spegnersi da solo (il telefono non lascia tenerlo acceso).</p>
 </header>
 
+<div id="aiuto" class="aiuto" hidden role="dialog" aria-label="Aiuto">
+  <div class="aiuto-barra"><b>Aiuto</b><button type="button" id="aiutoChiudi" class="secondario">Chiudi</button></div>
+  <div id="aiutoCorpo"></div>
+</div>
 <main>
   <section id="vInizio" class="vista">
     <img class="locandina" src="logo/logo-dish-scuro-locandina.svg" alt="Dish for a King">
     <h1 class="gotico" id="saluto">Benvenuto</h1>
     <p class="tenue centro" id="ruolo"></p>
+    <div class="riquadro" id="riquadroVisita" hidden>
+      <h2>Novità dall'ultima visita</h2>
+      <ul class="bacheca novita" id="listaVisita"></ul>
+      <button type="button" id="btnVisto" class="secondario">Visto</button>
+    </div>
     <button type="button" class="riquadro prossima" id="riquadroProssima" hidden>
       <span class="etichetta-prossima">Prossima serata</span>
       <b id="prossimaData"></b>
@@ -75,6 +85,11 @@
 
   <section id="vBrano" class="vista" hidden>
     <button type="button" id="btnIndietro" class="secondario indietro">◀ Repertorio</button>
+    <div class="stato-brano" id="testaStatoBrano" hidden>
+      <span class="etichetta-stato" id="etichettaStato"></span>
+      <button type="button" id="btnStatoBrano" class="secondario" hidden></button>
+      <p class="tenue piccolo" id="notaDefinitivo" hidden>Definitivo: per cambiarlo chiedi all'ADMIN di riportarlo In prova.</p>
+    </div>
     <form id="moduloBrano" onsubmit="return false" autocomplete="off">
       <fieldset id="campiBrano">
         <div class="riquadro">
@@ -269,6 +284,7 @@
       <p class="tenue piccolo" id="setupVuoti">Ancora nessun setup.</p>
       <button type="button" id="btnNuovoSetup" hidden>+ Nuovo setup</button>
       <button type="button" id="btnReferente" class="secondario" hidden>Referente tecnico</button>
+      <button type="button" id="btnMioSet" class="secondario" hidden>Il mio set di batteria</button>
       <div id="boxReferente" hidden>
         <label class="etichetta" for="refNome">Nome</label><input id="refNome" maxlength="40" placeholder="Francesco">
         <label class="etichetta" for="refTel">Telefono</label><input id="refTel" maxlength="20" inputmode="tel" placeholder="+39 …">
@@ -514,7 +530,8 @@
           <p class="tenue piccolo">Tocca un oggetto per aggiungerlo al centro del palco, poi trascinalo col dito (si aggancia ogni 25 cm, la batteria ogni 5 cm). Con + ingrandisci; col dito su una zona vuota sposti la vista. Pezzi uno sopra l'altro: tocca di nuovo lo stesso punto per scegliere quello sotto.</p>
           <div class="k-tavolozza" id="kTavolozza"></div>
           <h2 class="k-sotto">Batteria</h2>
-          <div class="riga-campi"><button type="button" id="kBtnMettiSet">Metti il mio set</button><button type="button" id="kBtnSalvaSet" class="secondario" hidden>Salva come mio set</button></div>
+          <div class="riga-campi"><button type="button" id="kBtnMettiSet">Metti il set di DRUM</button><button type="button" id="kBtnSalvaSet" hidden>Salva il mio set</button></div>
+          <p class="tenue piccolo" id="kSetInfo" hidden>Il tuo set: lo usa l'amministratore con "Metti il set di DRUM" nello stage plan. Le posizioni contano tra i pezzi, non sul palco.</p>
           <div class="k-tavolozza" id="kTavBatteria"></div>
         </fieldset>
       </div>
@@ -542,7 +559,7 @@
       <button type="button" id="kInviaScrivi">2 · Scrivi su WhatsApp</button>
       <p class="tenue piccolo" id="kInviaNota"></p>
     </div>
-    <div class="riquadro">
+    <div class="riquadro" id="kAzioni">
       <button type="button" id="kBtnFoglio">Foglio e stampa</button>
       <button type="button" id="kBtnDuplica" class="secondario" hidden>Duplica setup</button>
       <button type="button" id="kBtnEsporta" class="secondario" hidden>Esporta per Scheda Gig</button>
@@ -568,6 +585,7 @@
     <div class="palco-testa" id="palcoTesta">
       <div class="riga1">
         <button type="button" id="btnPalcoEsci" class="secondario" aria-label="Esci dal palco">◀</button>
+        <button type="button" id="btnAiutoPalco" class="secondario aiuto-tasto" aria-label="Aiuto del palco">?</button>
         <span id="pPosizione"></span>
         <b id="pTitolo"></b>
         <b id="pConta" class="palco-conta" hidden></b>
@@ -659,5 +677,6 @@
 <script src="app.js"></script>
 <script src="scheda.js"></script>
 <script src="locali.js"></script>
+<script src="aiuto.js"></script>
 </body>
 </html>
