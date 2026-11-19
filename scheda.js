@@ -897,9 +897,10 @@
   function costruisciFoglioK(k) {
     const f = $('foglioScheda'); f.textContent = ''; f.style.transform = '';
     const c = k.contenuto, ref = referente(), s1 = serataDi(k);
-    // Pagina 1
-    const p1 = el('div', 'pagina k-pagina');
-    p1.append(testaFoglioK(k));
+    // Correzione T9-1 (19/11/2026): il foglio si costruisce a riquadri e le pagine si misurano (impaginaK).
+    // Ogni riquadro è una lista di nodi che restano insieme (un titolo non resta mai da solo in fondo).
+    const sez1 = [], sez2 = [];
+    const p1 = { append: (...n) => sez1.push({ nodi: n }) }, p2 = { append: (...n) => sez2.push({ nodi: n }) };
     const info = el('div', 'k-info');
     const r = el('div', 'k-ref'); r.append(el('b', '', 'Referente tecnico'), el('span', '', [ref.nome, ref.telefono].filter(Boolean).join(' · ') || '—'));
     info.append(r);
@@ -911,8 +912,8 @@
     p1.append(info);
     const rc = k.tipo === 'serata' ? R.righeCollegamento(c) : null;   // T8-bis-2 (D5): cosa chiediamo al locale
     if (rc) { const b = el('div', 'k-coll'); b.append(el('b', '', 'Collegamento · ' + rc.titolo)); const ul = el('ul'); rc.righe.forEach((t) => ul.append(el('li', '', t))); b.append(ul); p1.append(b); }
-    p1.append(el('h3', '', 'Stage plan'));
-    const svg = s('svg', { class: 'k-palco', xmlns: NS }); disegnaPalco(svg, c.palco, false); p1.append(svg);
+    const svg = s('svg', { class: 'k-palco', xmlns: NS }); disegnaPalco(svg, c.palco, false);
+    const stage = [el('h3', '', 'Stage plan'), svg];   // stage plan e legenda nello stesso riquadro
     // C4: in legenda solo gli oggetti usati; i pezzi della batteria in una voce sola, icone più grandi
     const tipi = []; let batteria = false;
     c.palco.icone.forEach((o) => { if (o.gruppo === 'batteria') batteria = true; else if (tipi.indexOf(o.tipo) < 0) tipi.push(o.tipo); });
@@ -930,14 +931,13 @@
         lg.append(d);
       }
       tipi.forEach((t) => { const v = s('svg', { viewBox: t === 'pedana' ? '-90 -70 180 140' : '-60 -45 120 90', class: 'k-leg-ic' }); v.append(figura(t, 1, t === 'pedana' ? { larghezza: 1.6, profondita: 1.2 } : null)); const d = el('span', 'k-leg'); d.append(v, el('span', '', NOMI_ICONA[t])); lg.append(d); });
-      p1.append(lg);
+      stage.push(lg);
     }
+    p1.append(...stage);
     const prese = c.palco.icone.filter((o) => o.tipo === 'presa');
     const totPrese = prese.reduce((a, o) => a + (o.prese || 1), 0);
     if (c.prese || totPrese) p1.append(el('h3', '', 'Prese 230 V'), el('p', 'k-testo', [totPrese ? totPrese + (totPrese === 1 ? ' presa' : ' prese') + ' in ' + prese.length + (prese.length === 1 ? ' punto' : ' punti') + ' (vedi stage plan)' : '', c.prese].filter(Boolean).join('. ')));
-    // Pagina 2
-    const p2 = el('div', 'pagina k-pagina');
-    p2.append(testaFoglioK(k), el('h3', '', 'Channel list'));
+    // Pagina 2 (e seguenti): la channel list comincia sempre su una pagina nuova
     const mod = k.tipo === 'serata' ? c.collegamento : '', conSplit = mod === '3';
     const righe = R.numeraLinee(c.canali).map((x) => {
       if (x.libera) return { classe: 'libera', celle: [String(x.linea), 'libera', '', '', '', '', '', ''].concat(conSplit ? [''] : []) };
@@ -949,7 +949,8 @@
       return { classe: y.click ? 'click' : '', celle };
     });
     // C1: due colonne separate, "Mic da" e "Asta da"; T8-bis-2: in AES50 la linea è il canale del FOH, nello split la colonna Split
-    p2.append(tabella([mod === '2' ? 'Linea = ch FOH' : 'Ch', 'Sorgente', 'Mic / DI', 'Mic da', 'Asta', 'Asta da', '48V'].concat(conSplit ? ['Split'] : []).concat(['Note']), righe, 'k-canali' + (conSplit ? ' k-con-split' : '')));
+    const tabCanali = tabella([mod === '2' ? 'Linea = ch FOH' : 'Ch', 'Sorgente', 'Mic / DI', 'Mic da', 'Asta', 'Asta da', '48V'].concat(conSplit ? ['Split'] : []).concat(['Note']), righe, 'k-canali' + (conSplit ? ' k-con-split' : ''));
+    sez2.push({ nodi: [el('h3', '', 'Channel list'), tabCanali], tabella: tabCanali });
     const fams = []; c.canali.forEach((y) => { if (fams.indexOf(y.famiglia) < 0) fams.push(y.famiglia); });
     const lf = el('div', 'k-fams'); fams.forEach((fm) => { const d = el('span'); d.append(famigliaQuadro(fm), document.createTextNode(' ' + R.famigliaDi(fm).nome)); lf.append(d); }); p2.append(lf);
     // C2: riepilogo calcolato dalla channel list
@@ -963,25 +964,61 @@
       p2.append(box);
     }
     if (c.monitor.length) {
-      p2.append(el('h3', '', 'Monitor'));
+      const mon = [el('h3', '', 'Monitor')];
       // T8-bis-2 (D5): nelle modalità 1-2-3 i monitor sono della band; in 1A si dice per ogni mix dove esce
-      if (mod && mod !== '4') p2.append(el('p', 'k-gestiti', 'Gestiti dalla band, dal nostro mixer.'));
+      if (mod && mod !== '4') mon.push(el('p', 'k-gestiti', 'Gestiti dalla band, dal nostro mixer.'));
       const esce = mod.indexOf('1A') === 0;
       // C7: la colonna "In cuffia o in spia" si nasconde da sola se è vuota su tutte le righe
       const conAscolto = c.monitor.some((m) => m.ascolto);
-      p2.append(tabella(['Mix', 'Chi', 'Tipo', 'Posizione'].concat(conAscolto ? ['In cuffia o in spia'] : []).concat(esce ? ['Esce su'] : []),
+      mon.push(tabella(['Mix', 'Chi', 'Tipo', 'Posizione'].concat(conAscolto ? ['In cuffia o in spia'] : []).concat(esce ? ['Esce su'] : []),
         c.monitor.map((m) => ({ celle: [m.mix, m.chi, m.tipo, m.posizione].concat(conAscolto ? [m.ascolto] : []).concat(esce ? [m.sulleSpieLocale ? 'Spia del locale (aux del vostro mixer)' : 'Band'] : []) })), 'k-mon'));
+      p2.append(...mon);
     }
     if (c.backline.porta || c.backline.chiede) {
-      p2.append(el('h3', '', 'Backline'));
-      if (c.backline.porta) p2.append(el('b', 'k-sottotit', 'La band porta'), testoConElenco(c.backline.porta));
-      if (c.backline.chiede) p2.append(el('b', 'k-sottotit', 'Chiediamo al locale'), testoConElenco(c.backline.chiede));
+      const bl = [el('h3', '', 'Backline')];
+      if (c.backline.porta) bl.push(el('b', 'k-sottotit', 'La band porta'), testoConElenco(c.backline.porta));
+      if (c.backline.chiede) bl.push(el('b', 'k-sottotit', 'Chiediamo al locale'), testoConElenco(c.backline.chiede));
+      p2.append(...bl);
     }
     if (c.note) p2.append(el('h3', '', 'Note'), testoConElenco(c.note));
     if (c.ospitalita) p2.append(el('h3', '', 'Ospitalità'), testoConElenco(c.ospitalita));
-    p1.append(piedeK(k, 1, 2)); p2.append(piedeK(k, 2, 2));
-    f.append(p1, p2);
+    impaginaK(f, k, [sez1, sez2]);
     scalaAnteprimaK();
+  }
+  /**
+   * Correzione T9-1 (19/11/2026) · Impaginazione misurata. Ogni sezione comincia su una pagina nuova con la testata;
+   * i riquadri si aggiungono uno dopo l'altro e, se il contenuto supera 262 mm (270 mm di pagina meno 8 mm di piè),
+   * il riquadro passa alla pagina dopo. Solo la channel list più lunga di una pagina intera si divide per righe,
+   * con l'intestazione ripetuta. (non ovvio) Si misura con offsetTop/offsetHeight, che non risentono dello zoom
+   * dell'anteprima: il foglio va costruito con la vista visibile (apriFoglio), altrimenti le altezze sono 0.
+   */
+  function impaginaK(f, k, sezioni) {
+    const sonda = el('div'); sonda.style.height = '262mm'; f.append(sonda);
+    const LIM = sonda.offsetHeight; sonda.remove();
+    // (non ovvio) nell'anteprima le pagine dopo la prima hanno 6 mm di spazio in alto (riga tratteggiata) che in stampa non c'è: si toglie
+    const fondo = (pg) => { let m = 0; [...pg.children].forEach((x) => { m = Math.max(m, x.offsetTop + x.offsetHeight); }); return m - (parseFloat(getComputedStyle(pg).paddingTop) || 0); };
+    const nuova = () => { const pg = el('div', 'pagina k-pagina'); pg.append(testaFoglioK(k)); f.append(pg); return pg; };
+    const troppo = (pg) => LIM > 0 && fondo(pg) > LIM;
+    sezioni.forEach((sez) => {
+      let pg = nuova();
+      sez.forEach((b) => {
+        b.nodi.forEach((n) => pg.append(n));
+        if (!troppo(pg)) return;
+        if (pg.children.length > 1 + b.nodi.length) {      // c'era altro prima: il riquadro va intero sulla pagina dopo
+          b.nodi.forEach((n) => n.remove());
+          pg = nuova(); b.nodi.forEach((n) => pg.append(n));
+        }
+        // solo la channel list può essere più lunga di una pagina: righe in fondo sulla pagina dopo, intestazione ripetuta
+        let t = b.tabella;
+        while (t && troppo(pg) && t.rows.length > 2) {
+          const resto = el('table', t.className); resto.append(t.rows[0].cloneNode(true));
+          while (troppo(pg) && t.rows.length > 2) resto.insertBefore(t.rows[t.rows.length - 1], resto.rows[1] || null);
+          pg = nuova(); pg.append(resto); t = resto;
+        }
+      });
+    });
+    const pagine = [...f.querySelectorAll('.k-pagina')];
+    pagine.forEach((pg, i) => pg.append(piedeK(k, i + 1, pagine.length)));
   }
   /** C7: paragrafi ed elenchi puntati (righe che iniziano con "-"). */
   function testoConElenco(t) {
